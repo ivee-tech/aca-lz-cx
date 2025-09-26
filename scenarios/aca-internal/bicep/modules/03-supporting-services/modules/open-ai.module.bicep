@@ -73,7 +73,7 @@ resource spokePrivateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2
 
 
 module openAI '../../../../../shared/bicep/cognitive-services/open-ai.bicep' = {
-  name: 'openAI-${name}-Deployment'
+  name: take('openAI-${name}-Deployment', 64)
   params: {
     name: name
     location: location
@@ -89,7 +89,7 @@ module openAI '../../../../../shared/bicep/cognitive-services/open-ai.bicep' = {
 }
 
 module gpt35TurboDeployment  '../../../../../shared/bicep/cognitive-services/open-ai.Gpt.deployment.bicep' = if (deployOpenAiGptModel) {
-    name: 'GPT-${name}-Deployment'
+    name: take('GPT-${name}-Deployment', 64)
     params: {
       openAiName: name
       deploymentName: deploymentName
@@ -99,10 +99,17 @@ module gpt35TurboDeployment  '../../../../../shared/bicep/cognitive-services/ope
     ]
 }
 
-module openAiPrivateDnsZone '../../../../../shared/bicep/network/private-dns-zone.bicep' =  {
-  // conditional scope is not working: https://github.com/Azure/bicep/issues/7367
-  //scope: empty(vnetHubResourceId) ? resourceGroup() : resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4]) 
-  scope: empty(hubVNetName) ? resourceGroup() : resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4])
+module openAiPrivateDnsZoneHub '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (!empty(hubVNetName)) {
+  scope: resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4])
+  name: take('${replace(openAiDnsZoneName, '.', '-')}-PrivateDnsZoneDeployment', 64)
+  params: {
+    name: openAiDnsZoneName
+    virtualNetworkLinks: spokeVNetLinks
+    tags: tags
+  }
+}
+
+module openAiPrivateDnsZoneLocal '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (empty(hubVNetName)) {
   name: take('${replace(openAiDnsZoneName, '.', '-')}-PrivateDnsZoneDeployment', 64)
   params: {
     name: openAiDnsZoneName
@@ -117,7 +124,7 @@ module peOpenAI '../../../../../shared/bicep/network/private-endpoint.bicep' = {
     name: take('pe-${name}', 64)
     location: location
     tags: tags
-    privateDnsZonesId: openAiPrivateDnsZone.outputs.privateDnsZonesId
+    privateDnsZonesId: !empty(hubVNetName) ? openAiPrivateDnsZoneHub!.outputs.privateDnsZonesId : openAiPrivateDnsZoneLocal!.outputs.privateDnsZonesId
     privateLinkServiceId: openAI.outputs.resourceId
     snetId: spokePrivateEndpointSubnet.id
     subresource: 'account'

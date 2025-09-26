@@ -35,9 +35,9 @@ var vnetHubSplitTokens = contains(vnetHubResourceId, '/') ? split(vnetHubResourc
 // RESOURCES
 // ------------------
 
-// Deploy the private DNS zone in the spoke resource group if no valid resource id is provided
-module privateDnsZone 'private-dns-zone.bicep' = {
-  scope: contains(vnetHubResourceId, '/') ? resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4]) : resourceGroup()
+// Deploy the private DNS zone in the hub resource group if valid resource id is provided
+module privateDnsZoneHub 'private-dns-zone.bicep' = if (contains(vnetHubResourceId, '/')) {
+  scope: resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4])
   name: 'privateDnsZoneDeployment-${uniqueString(azServiceId, privateEndpointSubResourceName)}'
   params: {
     name: azServicePrivateDnsZoneName
@@ -45,12 +45,33 @@ module privateDnsZone 'private-dns-zone.bicep' = {
   }
 }
 
-module privateEndpoint 'private-endpoint.bicep' = {
+// Deploy the private DNS zone in the current resource group if no valid resource id is provided
+module privateDnsZoneLocal 'private-dns-zone.bicep' = if (!contains(vnetHubResourceId, '/')) {
+  name: 'privateDnsZoneDeployment-${uniqueString(azServiceId, privateEndpointSubResourceName)}'
+  params: {
+    name: azServicePrivateDnsZoneName
+    virtualNetworkLinks: virtualNetworkLinks
+  }
+}
+
+module privateEndpointHub 'private-endpoint.bicep' = if (contains(vnetHubResourceId, '/')) {
   name: 'privateEndpointDeployment-${uniqueString(azServiceId, privateEndpointSubResourceName)}'
   params: {
     name: privateEndpointName
     location: location
-    privateDnsZonesId: privateDnsZone.outputs.privateDnsZonesId
+    privateDnsZonesId: privateDnsZoneHub!.outputs.privateDnsZonesId
+    privateLinkServiceId: azServiceId
+    snetId:  subnetId
+    subresource: privateEndpointSubResourceName
+  }
+}
+
+module privateEndpointLocal 'private-endpoint.bicep' = if (!contains(vnetHubResourceId, '/')) {
+  name: 'privateEndpointDeployment-${uniqueString(azServiceId, privateEndpointSubResourceName)}'
+  params: {
+    name: privateEndpointName
+    location: location
+    privateDnsZonesId: privateDnsZoneLocal!.outputs.privateDnsZonesId
     privateLinkServiceId: azServiceId
     snetId:  subnetId
     subresource: privateEndpointSubResourceName
