@@ -15,15 +15,23 @@ param tags object = {}
 @maxLength(32)
 param helloWorldContainerAppName string = 'ca-simple-hello'
 
-@description('The resource ID of the existing user-assigned managed identity to be assigned to the Container App to be able to pull images from the container registry.')
-param containerRegistryUserAssignedIdentityId string
+@description('The name of the existing user-assigned managed identity to be assigned to the Container App to be able to pull images from the container registry.')
+param acrUmiName string
 
-@description('The resource ID of the existing Container Apps environment in which the Container App will be deployed.')
-param containerAppsEnvironmentId string
+@description('The resource name of the existing Container Apps environment in which the Container App will be deployed.')
+param caEnvName string
 
 // ------------------
 // RESOURCES
 // ------------------
+
+resource caEnv 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+  name: caEnvName
+}
+
+resource acrUmi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: acrUmiName
+}
 
 @description('The "Hello World" Container App.')
 resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
@@ -33,7 +41,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${containerRegistryUserAssignedIdentityId}': {}
+      '${acrUmi.id}': {}
     }
   }
   properties: {
@@ -48,7 +56,7 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
       registries: []
       secrets: []
     }
-    environmentId: containerAppsEnvironmentId
+    environmentId: caEnv.id
     workloadProfileName: 'Consumption'
     template: {
       containers: [

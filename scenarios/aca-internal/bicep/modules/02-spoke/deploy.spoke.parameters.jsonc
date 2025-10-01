@@ -4,7 +4,7 @@
   "parameters": {
     // The name of the workload that is being deployed. Up to 10 characters long. This wil be used as part of the naming convention (i.e. as defined here: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming) 
     "workloadName": {
-      "value": "lzaaca"
+      "value": "nasc"
     },
     //The name of the environment (e.g. "dev", "test", "prod", "preprod", "staging", "uat", "dr", "qa"). Up to 8 characters long.
     "environment": {
@@ -12,14 +12,17 @@
     },
     // optional. If empty automatic name will be generated. To override, please give name of spoke resource group name
     "spokeResourceGroupName": {
-      "value": ""
+      "value": "rg-nasc-spoke-dev-001"
     },
     "tags": {
         "value": {}
     },
-    // Replace with the resource ID of the hub virtual network 
-    "hubVNetId": {
-        "value": "<HUB_VNET_RESOURCE_ID>"
+    // Replace with the correct names for the hub virtual network 
+    "hubVNetRGName": {
+        "value": "rg-nasc-hub-dev-001"
+    },
+    "hubVNetName": {
+        "value": "vnet-dev-aue-hub"
     },
     "spokeVNetAddressPrefixes": {
       "value":  ["10.1.0.0/22"]
@@ -32,6 +35,12 @@
     },
     "spokeApplicationGatewaySubnetAddressPrefix": {
       "value":  "10.1.3.0/24"
+    },
+    "spokeFrontDoorSubnetName": {
+      "value":  "snet-fd"
+    },
+    "spokeFrontDoorSubnetAddressPrefix": {
+      "value":  "10.1.2.64/27"
     },
     "networkApplianceIpAddress": {
       "value": "[IP OF THE NETWORK APPLIANCE]"

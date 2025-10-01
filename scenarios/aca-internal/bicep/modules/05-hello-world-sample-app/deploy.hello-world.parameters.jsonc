@@ -5,13 +5,13 @@
     "tags": {
         "value": {}
     },
-    // Replace with the resource ID of the container apps environment 
-    "containerRegistryUserAssignedIdentityId": {
-        "value": "<CONTAINER_REGISTRY_USER_ASSIGNED_IDENTITY_RESOURCE_ID>"
+    // Replace with the name of user managed identity 
+    "acrUmiName": {
+        "value": "id-crnascmieoldevaue-AcrPull"
     },
-    // Replace with the resource ID of the container apps environment 
-    "containerAppsEnvironmentId": {
-      "value": "<CONTAINER_APPS_ENVIRONMENT_RESOURCE_ID>"
+    // Replace with the resource name of the container apps environment 
+    "caEnvName": {
+      "value": "cae-nasc-dev-aue"
     }
   }
 }

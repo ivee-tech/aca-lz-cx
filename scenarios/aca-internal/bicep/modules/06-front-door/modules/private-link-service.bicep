@@ -16,27 +16,29 @@ param privateLinkServiceName string
 @description('SubnetId used to configure private link service.')
 param privateLinkSubnetId string
 
-@description('Azure Container Apps Environment Default Domain Name')
-param containerAppsDefaultDomainName string
-
 @description('Azure Container Apps Environment Subscription Id')
 param containerAppsEnvironmentSubscriptionId string
+
+@description('Azure Container Apps Environment name')
+param containerAppsEnvironmentName string
+
+@description('Azure Container Apps Environment resource group name')
+param containerAppsEnvironmentResourceGroupName string
 
 // ------------------
 // VARIABLES
 // ------------------
 
 // => Resolve container apps environment managed resource group name to get the frontend Ip configuration
-var containerAppsDefaultDomainArray = split(containerAppsDefaultDomainName, '.')
-var containerAppsNameIdentifier = containerAppsDefaultDomainArray[lastIndexOf(containerAppsDefaultDomainArray, location)-1]
-var containerAppsManagedResourceGroup = 'MC_${containerAppsNameIdentifier}-rg_${containerAppsNameIdentifier}_${location}'
+// The infrastructure resource group follows the pattern: ME_{resourceGroupName}_{containerAppsEnvironmentName}
+var containerAppsManagedResourceGroup = take('ME_${containerAppsEnvironmentResourceGroupName}_${containerAppsEnvironmentName}', 63)
 
 // ------------------
 // RESOURCES
 // ------------------
 
 resource loadBalancer 'Microsoft.Network/loadBalancers@2021-05-01' existing = {
-  name: 'kubernetes-internal'
+  name: 'capp-svc-lb' // 'kubernetes-internal'
   scope: resourceGroup(containerAppsEnvironmentSubscriptionId, containerAppsManagedResourceGroup)
 }
 

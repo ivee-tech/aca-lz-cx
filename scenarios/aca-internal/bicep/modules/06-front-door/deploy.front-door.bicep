@@ -20,12 +20,15 @@ param location string = resourceGroup().location
 param tags object = {}
 
 // Container App Environment
-@description('The ID of the Container Apps environment to be used for the deployment. (e.g. /subscriptions/XXX/resourceGroups/XXX/providers/Microsoft.App/managedEnvironments/XXX)')
-param containerAppsEnvironmentId string
+@description('The name of the Container Apps environment to be used for the deployment. (e.g. /subscriptions/XXX/resourceGroups/XXX/providers/Microsoft.App/managedEnvironments/XXX)')
+param caEnvName string
 
 // Private Link Service
-@description('The resource ID of the subnet to be used for the private link service. (e.g. /subscriptions/XXX/resourceGroups/XXX/providers/Microsoft.Network/virtualNetworks/XXX/subnets/XXX)')
-param privateLinkSubnetId string
+@description('The resource name of the vnet to be used for the private link service. (e.g. /subscriptions/XXX/resourceGroups/XXX/providers/Microsoft.Network/virtualNetworks/XXX/subnets/XXX)')
+param privateLinkVNetName string
+
+@description('The resource name of the subnet to be used for the private link service. (e.g. /subscriptions/XXX/resourceGroups/XXX/providers/Microsoft.Network/virtualNetworks/XXX/subnets/XXX)')
+param privateLinkSubnetName string
 
 @description('The name of the front door endpoint to be created.')
 param frontDoorEndpointName string = 'fde-containerapps'
@@ -46,10 +49,9 @@ param frontDoorOriginHostName string
 // VARIABLES
 // ------------------
 
-var containerAppsEnvironmentTokens = split(containerAppsEnvironmentId, '/')
-var containerAppsEnvironmentSubscriptionId = containerAppsEnvironmentTokens[2]
-var containerAppsEnvironmentResourceGroupName = containerAppsEnvironmentTokens[4]
-var containerAppsEnvironmentName = containerAppsEnvironmentTokens[8]
+// var containerAppsEnvironmentTokens = split(containerAppsEnvironmentId, '/')
+var subscriptionId = subscription().subscriptionId // containerAppsEnvironmentTokens[2]
+var caEnvRGName = resourceGroup().name // containerAppsEnvironmentTokens[4]
 
 var privateLinkServiceName = '${naming.outputs.resourceTypeAbbreviations.privateLinkService}-${naming.outputs.resourcesNames.frontDoor}'
 
@@ -67,21 +69,24 @@ module naming '../../../../shared/bicep/naming/naming.module.bicep' = {
   }
 }
 
-
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-10-01' existing = {
-  scope: resourceGroup(containerAppsEnvironmentSubscriptionId, containerAppsEnvironmentResourceGroupName)
-  name: containerAppsEnvironmentName
+resource privateLinkVNet 'Microsoft.Network/virtualNetworks@2022-01-01' existing = {
+  name: privateLinkVNetName
 }
 
+resource privateLinkSubnet 'Microsoft.Network/virtualNetworks/subnets@2022-01-01' existing = {
+  parent: privateLinkVNet
+  name: privateLinkSubnetName
+}
 module privateLinkService './modules/private-link-service.bicep' = {
   name: 'privateLinkServiceFrontDoorDeployment-${uniqueString(resourceGroup().id)}'
   params: {
     location: location
     tags: tags
-    containerAppsDefaultDomainName: containerAppsEnvironment.properties.defaultDomain
-    containerAppsEnvironmentSubscriptionId: containerAppsEnvironmentSubscriptionId
+    containerAppsEnvironmentSubscriptionId: subscriptionId
+    containerAppsEnvironmentName: caEnvName
+    containerAppsEnvironmentResourceGroupName: caEnvRGName
     privateLinkServiceName: privateLinkServiceName
-    privateLinkSubnetId: privateLinkSubnetId
+    privateLinkSubnetId: privateLinkSubnet.id
   }
 }
 

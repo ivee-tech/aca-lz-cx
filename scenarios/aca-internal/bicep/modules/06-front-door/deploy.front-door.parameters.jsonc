@@ -4,7 +4,7 @@
   "parameters": {
     // The name of the workload that is being deployed. Up to 10 characters long. This wil be used as part of the naming convention (i.e. as defined here: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming) 
     "workloadName": {
-      "value": "lzaaca"
+      "value": "nasc"
     },
     //The name of the environment (e.g. "dev", "test", "prod", "preprod", "staging", "uat", "dr", "qa"). Up to 8 characters long.
     "environment": {
@@ -14,12 +14,15 @@
       "value": {}
     },
     // Replace with the resource ID of the container apps environment   
-    "containerAppsEnvironmentId": {
-      "value": "<CONTAINER_APPS_ENVIRONMENT_RESOURCE_ID>"
+    "caEnvName": {
+      "value": "cae-nasc-dev-aue"
     },
-    // Replace with the resource ID of the private endpoints subnet of the spoke virtual network
-    "privateLinkSubnetId": {
-      "value": "<FRONT_DOOR_SUBNET_RESOURCE_ID>"
+    "privateLinkVNetName": {
+      "value": "vnet-nasc-dev-aue-spoke"
+    },
+    // Replace with the resource names of the private endpoints subnet of the spoke virtual network
+    "privateLinkSubnetName": {
+      "value": "snet-fd"
     },
     // Replace with the name of the front door endpoint
     "frontDoorEndpointName": {
@@ -27,7 +30,7 @@
     },
     // Replace with the FQDN of the hello world sample app
     "frontDoorOriginHostName": {
-      "value": "<HELLO_WORLD_SAMPLE_APP_FQDN>"
+      "value": "nasc-helloworld-dev"
     }
   }
 }

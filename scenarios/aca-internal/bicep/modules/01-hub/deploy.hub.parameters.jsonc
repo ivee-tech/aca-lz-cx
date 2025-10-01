@@ -4,7 +4,7 @@
   "parameters": {
     // The name of the workload that is being deployed. Up to 10 characters long. This wil be used as part of the naming convention (i.e. as defined here: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming) 
     "workloadName": {
-      "value": "lzaaca"
+      "value": "nasc"
     },
     //The name of the environment (e.g. "dev", "test", "prod", "preprod", "staging", "uat", "dr", "qa"). Up to 8 characters long.
     "environment": {
@@ -15,7 +15,7 @@
     },
     // optional. If empty automatic name will be generated. To override, please give name of hub resource group name
     "hubResourceGroupName": {
-      "value": ""
+      "value": "rg-nasc-hub-dev-001"
     },
     "vnetAddressPrefixes": {
       "value": [
@@ -23,7 +23,7 @@
       ]
     },
     "enableBastion": {
-      "value": true
+      "value": false
     },
     "spokeInfraSubnetAddressPrefix": {
       "value":  "10.1.0.0/23"

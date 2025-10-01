@@ -114,8 +114,8 @@ resource vm 'Microsoft.Compute/virtualMachines@2021-03-01' = {
       }
       imageReference: {
         publisher: 'Canonical'
-        offer: 'UbuntuServer'
-        sku: '18.04-LTS'
+        offer: 'ubuntu-24_04-lts'
+        sku: 'server'
         version: 'latest'
       }
     }

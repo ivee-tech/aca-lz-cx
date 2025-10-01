@@ -22,8 +22,11 @@ param tags object = {}
 @description('The FQDN of the Application Gateawy. Must match the TLS certificate.')
 param applicationGatewayFqdn string
 
-@description('The existing subnet resource ID to use for Application Gateway.')
-param applicationGatewaySubnetId string
+@description('The existing spoke VNet name.')
+param spokeVNetName string 
+
+@description('The existing subnet resource name to use for Application Gateway.')
+param applicationGatewaySubnetName string
 
 @description('The FQDN of the primary backend endpoint.')
 param applicationGatewayPrimaryBackendEndFqdn string
@@ -37,11 +40,17 @@ param enableApplicationGatewayCertificate bool
 @description('The name of the certificate key to use for Application Gateway certificate.')
 param applicationGatewayCertificateKeyName string
 
-@description('The resource ID of the exsiting Log Analytics workload for diagnostic settngs, or nothing if you don\'t need any.')
-param applicationGatewayLogAnalyticsId string = ''
+@description('The resource group name of the exsiting Log Analytics workload for diagnostic settngs, or nothing if you don\'t need any.')
+param applicationGatewayLogAnalyticsRGName string = ''
 
-@description('The resource ID of the existing Key Vault which contains Application Gateway\'s cert.')
-param keyVaultId string
+@description('The resource name of the exsiting Log Analytics workload for diagnostic settngs, or nothing if you don\'t need any.')
+param applicationGatewayLogAnalyticsName string = ''
+
+@description('The name of the resource group containing the existing Key Vault.')
+param keyVaultRGName string = ''
+
+@description('The resource name of the existing Key Vault which contains Application Gateway\'s cert.')
+param keyVaultName string
 
 @description('Optional, default value is true. If true, any resources that support AZ will be deployed in all three AZ. However if the selected region is not supporting AZ, this parameter needs to be set to false.')
 param deployZoneRedundantResources bool = true
@@ -58,16 +67,16 @@ param ddosProtectionMode string = 'Disabled'
 // VARIABLES
 // ------------------
 
-var keyVaultIdTokens = split(keyVaultId, '/')
+// var keyVaultIdTokens = split(keyVaultId, '/')
 
-@description('The subscription ID of the existing Key Vault.')
-var keyVaultSubscriptionId = keyVaultIdTokens[2]
+// @description('The subscription ID of the existing Key Vault.')
+// var keyVaultSubscriptionId = subscription().subscriptionId // keyVaultIdTokens[2]
 
-@description('The name of the resource group containing the existing Key Vault.')
-var keyVaultResourceGroupName = keyVaultIdTokens[4]
+// @description('The name of the resource group containing the existing Key Vault.')
+// var keyVaultResourceGroupName = '' // keyVaultIdTokens[4]
 
-@description('The name of the existing Key Vault.')
-var keyVaultName = keyVaultIdTokens[8]
+// @description('The name of the existing Key Vault.')
+// var keyVaultName = keyVaultIdTokens[8]
 
 @description('The existing PFX for Azure Application Gateway to use on its frontend.')
 var applicationGatewayCertificatePath = 'configuration/acahello.demoapp.com.pfx'
@@ -75,6 +84,20 @@ var applicationGatewayCertificatePath = 'configuration/acahello.demoapp.com.pfx'
 // ------------------
 // RESOURCES
 // ------------------
+
+resource spokeVNet 'Microsoft.Network/virtualNetworks@2021-05-01' existing = {
+  name: spokeVNetName
+} 
+
+resource applicationGatewaySubnet 'Microsoft.Network/virtualNetworks/subnets@2021-05-01' existing = {
+  name: applicationGatewaySubnetName
+  parent: spokeVNet
+}
+
+resource applicationGatewayLogAnalytics 'Microsoft.OperationalInsights/workspaces@2021-06-01' existing = if (applicationGatewayLogAnalyticsRGName != '' && applicationGatewayLogAnalyticsName != '') {
+  name: applicationGatewayLogAnalyticsName
+  scope: resourceGroup(applicationGatewayLogAnalyticsRGName)
+}
 
 @description('User-configured naming rules')
 module naming '../../../../shared/bicep/naming/naming.module.bicep' = {
@@ -107,7 +130,7 @@ module userAssignedIdentity '../../../../shared/bicep/managed-identity.bicep' = 
 @description('Adds the PFX file into Azure Key Vault for consumption by Application Gateway.')
 module appGatewayAddCertificates './modules/app-gateway-cert.bicep' = if (enableApplicationGatewayCertificate) {
   name: take('appGatewayAddCertificates-Deployment-${uniqueString(resourceGroup().id)}', 64)
-  scope: resourceGroup(keyVaultSubscriptionId, keyVaultResourceGroupName)
+  scope: resourceGroup(keyVaultRGName)
   params: {
     keyVaultName: keyVaultName
     appGatewayCertificateData: loadFileAsBase64(applicationGatewayCertificatePath)
@@ -115,7 +138,6 @@ module appGatewayAddCertificates './modules/app-gateway-cert.bicep' = if (enable
     appGatewayUserAssignedIdentityPrincipalId: userAssignedIdentity.outputs.principalId        
   }
 }
-
 
 module applicationGatewayPublicIp '../../../../shared/bicep/network/pip.bicep' = {
   name: take('applicationGatewayPublicIp-Deployment-${uniqueString(resourceGroup().id)}', 64)
@@ -130,7 +152,7 @@ module applicationGatewayPublicIp '../../../../shared/bicep/network/pip.bicep' =
       '2'
       '3'
     ] : []
-    diagnosticWorkspaceId: applicationGatewayLogAnalyticsId
+    diagnosticWorkspaceId: applicationGatewayLogAnalytics.id
     ddosProtectionMode: ddosProtectionMode
   }
 }
@@ -145,14 +167,14 @@ module applicationGateway '../../../../shared/bicep/network/application-gateway.
       '${userAssignedIdentity.outputs.id}': {}
     }
     sku: 'WAF_v2'
-    diagnosticWorkspaceId: applicationGatewayLogAnalyticsId
+    diagnosticWorkspaceId: applicationGatewayLogAnalytics.id
 
     gatewayIPConfigurations: [
       {
         name: 'appGatewayIpConfig'
         properties: {
           subnet: {
-            id: applicationGatewaySubnetId
+            id: applicationGatewaySubnet.id
           }
         }
       }

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "AustraliaEast"
+    },
+    "tags": {
+      "value": {
+      }
+    },
+    "containerAppName": {
+      "value": "ca-nasc-api1"
+    },
+    "containerImage": {
+      "value": "mcr.microsoft.com/dotnet/samples:aspnetapp"
+    },
+    "targetPort": {
+      "value": 80
+    },
+    "cpuAllocation": {
+      "value": "0.5"
+    },
+    "memoryAllocation": {
+      "value": "1Gi"
+    },
+    "minReplicas": {
+      "value": 1
+    },
+    "maxReplicas": {
+      "value": 5
+    },
+    "containerAppsEnvironmentName": {
+      "value": "cae-nasc-dev-aue"
+    },
+    "acrUmiName": {
+      "value": "id-crnascmieoldevaue-AcrPull"
+    },
+    "containerRegistryName": {
+      "value": "crnascmieoldevaue"
+    },
+    "environmentVariables": {
+      "value": [
+        {
+          "name": "API_VERSION",
+          "value": "v2"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        }
+      ]
+    },
+    "secrets": {
+      "value": []
+    }
+  }
+}

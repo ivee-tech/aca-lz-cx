@@ -4,7 +4,7 @@
   "parameters": {
     // The name of the workload that is being deployed. Up to 10 characters long. This wil be used as part of the naming convention (i.e. as defined here: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming) 
     "workloadName": {
-      "value": "lzaaca"
+      "value": "nasc"
     },
     //The name of the environment (e.g. "dev", "test", "prod", "preprod", "staging", "uat", "dr", "qa"). Up to 8 characters long.
     "environment": {
@@ -19,15 +19,21 @@
     },
     // The FQDN of the Application Gateway. Must match the TLS Certificate.
     "applicationGatewayFqdn": {
-        "value": "acahello.demoapp.com"
+        "value": "nasc-hw.demoapp.com"
+    },
+    "spokeVNetName": {
+      "value": "vnet-nasc-dev-aue-spoke"
     },
     // Replace with the resource ID of the application gateway subnet of the spoke virtual network
-    "applicationGatewaySubnetId": {
-      "value": "<APPLICATION_GATEWAY_SUBNET_RESOURCE_ID>"
+    "applicationGatewaySubnetName": {
+      "value": "snet-agw"
     },
-    // The resource ID of the exsiting Log Analytics workload for diagnostic settngs, or nothing if you don\'t need any
-    "applicationGatewayLogAnalyticsId": {
-      "value": ""
+    "applicationGatewayLogAnalyticsRGName": {
+      "value": "rg-nasc-hub-dev-001"
+    },
+    // The resource name of the exsiting Log Analytics workload for diagnostic settngs, or nothing if you don\'t need any
+    "applicationGatewayLogAnalyticsName": {
+      "value": "log-nasc-dev-aue"
     },
     // Replace with the FQDN of the hello world sample app
     "applicationGatewayPrimaryBackendEndFqdn": {
@@ -39,9 +45,12 @@
     "applicationGatewayCertificateKeyName": {
       "value": "agwcert"
     },
+    "keyVaultRGName": {
+      "value": "rg-nasc-spoke-dev-001"
+    },
     // Replace with the resource ID of the Key Vault
-    "keyVaultId": {
-      "value": "<KEY_VAULT_RESOURCE_ID>"
+    "keyVaultName": {
+      "value": "kv-nasc-mieol-dev-aue"
     }
   }
 }

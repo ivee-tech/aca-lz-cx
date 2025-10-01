@@ -20,12 +20,16 @@ param location string = resourceGroup().location
 param tags object = {}
 
 // Hub
-@description('The resource ID of the existing hub virtual network.')
-param hubVNetId string
+@description('The resource group name of the existing hub virtual network.')
+param hubVNetRGName string
+@description('The resource name of the existing hub virtual network.')
+param hubVNetName string
 
 // Spoke
-@description('The resource ID of the existing spoke virtual network to which the private endpoint will be connected.')
-param spokeVNetId string
+@description('The resource name of the existing spoke virtual network to which the private endpoint will be connected.')
+param spokeVNetRGName string
+@description('The resource name of the existing spoke virtual network to which the private endpoint will be connected.')
+param spokeVNetName string
 
 @description('The name of the existing subnet in the spoke virtual to which the private endpoint will be connected.')
 param spokePrivateEndpointSubnetName string
@@ -39,8 +43,11 @@ param deployOpenAi bool
 @description('Deploy (or not) a model on the openAI Account. This is used only as a sample to show how to deploy a model on the OpenAI account.')
 param deployOpenAiGptModel bool = false
 
-@description('Optional. Resource ID of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined.')
-param logAnalyticsWorkspaceId string = ''
+@description('Optional. Resource group name of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined.')
+param laWorkspaceRGName string = ''
+
+@description('Optional. Resource name of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined.')
+param laWorkspaceName string = ''
 
 @description('Optional, default value is true. If true, any resources that support AZ will be deployed in all three AZ. However if the selected region is not supporting AZ, this parameter needs to be set to false.')
 param deployZoneRedundantResources bool = true
@@ -61,8 +68,23 @@ module naming '../../../../shared/bicep/naming/naming.module.bicep' = {
 }
 
 // Keep the logic below here as it is required for all supporting services
-var hubVNetIdTokens = split(hubVNetId, '/')
-var hubVNetName = length(hubVNetIdTokens) > 8 ? hubVNetIdTokens[8] : ''
+// var hubVNetIdTokens = split(hubVNetId, '/')
+// var hubVNetName = length(hubVNetIdTokens) > 8 ? hubVNetIdTokens[8] : ''
+
+resource hubVNet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: hubVNetName
+  scope: resourceGroup(hubVNetRGName)
+}
+
+resource spokeVNet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: spokeVNetName
+  scope: resourceGroup(spokeVNetRGName)
+}
+
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-11-01' existing = if (laWorkspaceName != '' && laWorkspaceRGName != '') {
+  name: laWorkspaceName
+  scope: resourceGroup(laWorkspaceRGName)
+}
 
 @description('Azure Container Registry, where all workload images should be pulled from.')
 module containerRegistry 'modules/container-registry.module.bicep' = {
@@ -71,13 +93,13 @@ module containerRegistry 'modules/container-registry.module.bicep' = {
     containerRegistryName: naming.outputs.resourcesNames.containerRegistry
     location: location
     tags: tags
-    spokeVNetId: spokeVNetId
+    spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
-    hubVNetId: hubVNetId
+    hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     containerRegistryPrivateEndpointName: naming.outputs.resourcesNames.containerRegistryPep
     containerRegistryUserAssignedIdentityName: naming.outputs.resourcesNames.containerRegistryUserAssignedIdentity
-    diagnosticWorkspaceId: logAnalyticsWorkspaceId
+    diagnosticWorkspaceId: logAnalyticsWorkspace.id
     deployZoneRedundantResources: deployZoneRedundantResources
   }
 }
@@ -89,12 +111,12 @@ module keyVault 'modules/key-vault.bicep' = {
     keyVaultName: naming.outputs.resourcesNames.keyVault
     location: location
     tags: tags
-    spokeVNetId: spokeVNetId
+    spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
-    hubVNetId: hubVNetId
+    hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     keyVaultPrivateEndpointName: naming.outputs.resourcesNames.keyVaultPep
-    diagnosticWorkspaceId: logAnalyticsWorkspaceId
+    diagnosticWorkspaceId: logAnalyticsWorkspace.id
   }
 }
 
@@ -104,11 +126,11 @@ module redisCache 'modules/redis-cache.bicep' = if (deployRedisCache) {
   params: {
     location: location
     redisName: naming.outputs.resourcesNames.redisCache
-    logAnalyticsWsId: logAnalyticsWorkspaceId
+    logAnalyticsWsId: logAnalyticsWorkspace.id
     keyVaultName: keyVault.outputs.keyVaultName
-    spokeVNetId: spokeVNetId
+    spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
-    hubVNetId: hubVNetId
+    hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     redisCachePrivateEndpointName: naming.outputs.resourcesNames.redisCachePep
   }
@@ -122,12 +144,12 @@ module openAi 'modules/open-ai.module.bicep'= if(deployOpenAi) {
     deploymentName: naming.outputs.resourcesNames.openAiDeployment
     location: location
     tags: tags
-    vnetHubResourceId: hubVNetId
-    logAnalyticsWsId: logAnalyticsWorkspaceId
+    vnetHubResourceId: hubVNet.id
+    logAnalyticsWsId: logAnalyticsWorkspace.id
     deployOpenAiGptModel: deployOpenAiGptModel
-    spokeVNetId: spokeVNetId
+    spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
-    hubVNetId: hubVNetId
+    hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
   }
 }

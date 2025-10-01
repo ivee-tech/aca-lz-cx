@@ -19,8 +19,10 @@ param location string = resourceGroup().location
 param tags object = {}
 
 // Hub
-@description('The resource ID of the existing hub virtual network.')
-param hubVNetId string
+@description('The resource group name of the existing hub virtual network.')
+param hubVNetRGName string
+@description('The resource name of the existing hub virtual network.')
+param hubVNetName string
 
 // Spoke
 @description('The name of the existing spoke virtual network.')
@@ -39,8 +41,11 @@ param enableDaprInstrumentation bool
 @description('Enable sending usage and telemetry feedback to Microsoft.')
 param enableTelemetry bool = true
 
-@description('The resource id of an existing Azure Log Analytics Workspace.')
-param logAnalyticsWorkspaceId string
+@description('Optional. Resource group name of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined.')
+param laWorkspaceRGName string = ''
+
+@description('Optional. Resource name of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined.')
+param laWorkspaceName string = ''
 
 @description('Optional, default value is true. If true, any resources that support AZ will be deployed in all three AZ. However if the selected region is not supporting AZ, this parameter needs to be set to false.')
 param deployZoneRedundantResources bool = true
@@ -62,17 +67,30 @@ var workloadProfile = dedicatedWorkloadProfile ? [
 //  }
 ] : []
 
-var hubVNetResourceIdTokens = contains(hubVNetId, '/')  ? split(hubVNetId, '/') : array('')
+// var hubVNetResourceIdTokens = contains(hubVNetId, '/')  ? split(hubVNetId, '/') : array('')
 
 // check to ensure the hubVNetResourceIdTokens was valid by checking the length of the array created in previous step
-@description('The name of the hub virtual network.')
-var hubVNetName = length(hubVNetResourceIdTokens) > 7 ? hubVNetResourceIdTokens[8] : ''
+// @description('The name of the hub virtual network.')
+// var hubVNetName = length(hubVNetResourceIdTokens) > 7 ? hubVNetResourceIdTokens[8] : ''
 
-@description('The ID of the subscription containing the hub virtual network.')
-var hubSubscriptionId = length(hubVNetResourceIdTokens) > 1 ? hubVNetResourceIdTokens[2] : ''
+resource hubVNet 'Microsoft.Network/virtualNetworks@2023-11-01' existing = {
+  name: hubVNetName
+  scope: resourceGroup(hubVNetRGName)
+}
 
-@description('The name of the resource group containing the hub virtual network.')
-var hubResourceGroupName =  length(hubVNetResourceIdTokens) > 3 ? hubVNetResourceIdTokens[4] : ''
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = if (laWorkspaceName != '' && laWorkspaceRGName != '') {
+  name: laWorkspaceName
+  scope: resourceGroup(laWorkspaceRGName)
+}
+
+
+// @description('The ID of the subscription containing the hub virtual network.')
+// var hubSubscriptionId = length(hubVNetResourceIdTokens) > 1 ? hubVNetResourceIdTokens[2] : ''
+
+// @description('The name of the resource group containing the hub virtual network.')
+// var hubResourceGroupName =  length(hubVNetResourceIdTokens) > 3 ? hubVNetResourceIdTokens[4] : ''
+
+var hubSubscriptionId = subscription().subscriptionId
 
 var telemetryId = '9b4433d6-924a-4c07-b47c-7478619759c7-${location}-acasb'
 
@@ -87,7 +105,7 @@ var spokeVNetLinks = concat(
   !empty(hubVNetName) ? [
     {
       vnetName: hubVNetName
-      vnetId: hubVNetId
+      vnetId: hubVNet.id
       registrationEnabled: false
     }
   ] : []
@@ -129,7 +147,7 @@ module applicationInsights '../../../../shared/bicep/app-insights.bicep' = if (e
     name: naming.outputs.resourcesNames.applicationInsights
     location: location
     tags: tags
-    workspaceResourceId: logAnalyticsWorkspaceId
+    workspaceResourceId: logAnalyticsWorkspace.id
   }
 }
 
@@ -140,7 +158,7 @@ module containerAppsEnvironment '../../../../shared/bicep/aca-environment.bicep'
     name: naming.outputs.resourcesNames.containerAppsEnvironment
     location: location
     tags: tags
-    diagnosticWorkspaceId: logAnalyticsWorkspaceId
+    diagnosticWorkspaceId: logAnalyticsWorkspace.id
     subnetId: spokeVNet::infraSubnet.id
     vnetEndpointInternal: true
     appInsightsInstrumentationKey: (enableApplicationInsights && enableDaprInstrumentation) ? applicationInsights.outputs.appInsInstrumentationKey : ''
@@ -152,7 +170,7 @@ module containerAppsEnvironment '../../../../shared/bicep/aca-environment.bicep'
 
 @description('The Private DNS zone containing the ACA load balancer IP')
 module containerAppsEnvironmentPrivateDnsZone '../../../../shared/bicep/network/private-dns-zone.bicep' = {
-  scope: resourceGroup(hubSubscriptionId, hubResourceGroupName)
+  scope: resourceGroup(hubSubscriptionId, hubVNetRGName)
   name: 'containerAppsEnvironmentPrivateDnsZone-${uniqueString(resourceGroup().id)}'
   params: {
     name: containerAppsEnvironment.outputs.containerAppsEnvironmentDefaultDomain

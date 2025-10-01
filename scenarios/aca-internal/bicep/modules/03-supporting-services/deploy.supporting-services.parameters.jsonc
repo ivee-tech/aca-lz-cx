@@ -4,7 +4,7 @@
   "parameters": {
     // The name of the workload that is being deployed. Up to 10 characters long. This wil be used as part of the naming convention (i.e. as defined here: https://learn.microsoft.com/azure/cloud-adoption-framework/ready/azure-best-practices/resource-naming) 
     "workloadName": {
-      "value": "lzaaca"
+      "value": "nasc"
     },
     //The name of the environment (e.g. "dev", "test", "prod", "preprod", "staging", "uat", "dr", "qa"). Up to 8 characters long.
     "environment": {
@@ -15,26 +15,35 @@
     },
     // if true Azure Cache for Redis (Premium SKU), together with Private Endpoint and the relavant Private DNS Zone will be deployed
     "deployRedisCache": {
-      "value": false
+      "value": true
     },
-    // Replace with the resource ID of the spoke virtual network 
-    "spokeVNetId": {
-        "value": "<SPOKE_VNET_RESOURCE_ID>"
+    // Replace with the resource names of the spoke virtual network 
+    "spokeVNetRGName": {
+        "value": "rg-nasc-spoke-dev-001"
+    },
+    "spokeVNetName": {
+        "value": "vnet-nasc-dev-aue-spoke"
     },
     // Optional. Resource ID of the diagnostic log analytics workspace. If left empty, no diagnostics settings will be defined. 
-    "logAnalyticsWorkspaceId": {
-      "value": ""
+    "laWorkspaceRGName": {
+      "value": "rg-nasc-hub-dev-001"
     },
-    // Replace with the resource ID of the hub virtual network - required to link the privateDNS zone to the Hub network as well 
-    "hubVNetId": {
-      "value": "<HUB_VNET_RESOURCE_ID>"
+    "laWorkspaceName": {
+      "value": "log-nasc-dev-aue"
+    },
+    // Replace with the correct names for the hub virtual network 
+    "hubVNetRGName": {
+        "value": "rg-nasc-hub-dev-001"
+    },
+    "hubVNetName": {
+        "value": "vnet-dev-aue-hub"
     },
     "spokePrivateEndpointSubnetName": {
       "value": "snet-pep"
     },
     // Deploy (or not) an Azure OpenAI account. ATTENTION: At the time of writing , OpenAI is in preview and only available in limited regions: look here: https://learn.microsoft.com/azure/ai-services/openai/chatgpt-quickstart#prerequisites
     "deployOpenAi": {
-      "value": true
+      "value": false
     }
   }
 }
