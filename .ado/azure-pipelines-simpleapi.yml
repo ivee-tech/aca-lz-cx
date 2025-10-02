@@ -27,8 +27,11 @@ variables:
   # Set your Azure Container Registry name (without domain) e.g. myacr123
   acrName: 'crnascmieoldevaue'
   repository: 'simpleapi'
-  # Tag strategy: build id + short commit
-  imageTag: '$(Build.BuildId)-$(Build.SourceVersion:0:7)'
+  # Derive short commit SHA once (Azure DevOps does not support the :0:7 syntax inside $(...))
+  # Use an expression to substring Build.SourceVersion, then compose imageTag.
+  shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
+  # Tag strategy: build id + short commit (e.g. 42-a1b2c3d)
+  imageTag: '$(Build.BuildId)-$(shortSha)'
   # Fully qualified login server
   acrLoginServer: '$(acrName).azurecr.io'
   # Set to true to enable a connectivity sanity check before pushing
