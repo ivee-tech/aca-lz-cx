@@ -1,0 +1,154 @@
+# Azure DevOps Pipeline: Build & Push SimpleApi Docker image to private ACR (private endpoint)
+# ---------------------------------------------------------------------------------
+# Prerequisites (TEMPORARY PUBLIC ACCESS MODE):
+# - Using Microsoft-hosted ubuntu-latest agent (no private endpoint reach required).
+# - Public network access to ACR must be ENABLED during this temporary phase.
+# - Use a standard Azure Resource Manager service connection with AcrPush role.
+# - When reverting to private endpoint + self-hosted, restore previous pool + connectivity check.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - api/SimpleApi/*
+
+# Optional PR trigger
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - api/SimpleApi/*
+
+variables:
+  # Set your Azure Container Registry name (without domain) e.g. myacr123
+  acrName: 'crnascmieoldevaue'
+  repository: 'simpleapi'
+  # Tag strategy: build id + short commit
+  imageTag: '$(Build.BuildId)-$(Build.SourceVersion:0:7)'
+  # Fully qualified login server
+  acrLoginServer: '$(acrName).azurecr.io'
+  # Set to true to enable a connectivity sanity check before pushing
+  runConnectivityCheck: 'false'   # Disabled for hosted agent + public ACR scenario
+
+# Temporary switch to Microsoft-hosted agent (ubuntu-latest)
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: BuildAndPush
+    displayName: Build & Push SimpleApi Image
+    jobs:
+      - job: Build
+        displayName: Docker Build & Push
+        steps:
+          - checkout: self
+            clean: true
+
+          # Connectivity check skipped (public ACR + hosted agent). Restore when reverting to private endpoint.
+          #- script: |
+          #    echo "Testing DNS resolution for $(acrLoginServer)";
+          #    nslookup $(acrLoginServer) || exit 1
+          #  displayName: 'Connectivity sanity check (disabled)'
+
+          # -------- AUTH OPTION A: Azure Resource Manager service connection + Docker@2 login --------
+          # Requires a service connection (e.g. name: SC-ACR) scoped to the registry's subscription.
+          - task: Docker@2
+            displayName: 'ACR Login (Service Connection)'
+            condition: and(succeeded(), ne(variables['USE_MANAGED_IDENTITY'], 'true'), ne(variables['USE_SP_CREDS'], 'true'))
+            inputs:
+              command: login
+              containerRegistry: 'SC-ACR'  # Replace with your service connection name
+
+          # -------- AUTH OPTION B: Managed Identity (Linux agent on Azure VM/VMSS) --------
+          - task: AzureCLI@2
+            displayName: 'Login via Managed Identity'
+            condition: eq(variables['USE_MANAGED_IDENTITY'], 'true')
+            inputs:
+              azureSubscription: ''  # Leave blank; using MSI token issuance without service connection (if allowed) else create a minimal connection.
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with managed identity (assuming system or user-assigned identity attached).'
+                az login --identity --allow-no-subscriptions
+                az acr login -n $(acrName)
+
+          # -------- AUTH OPTION C: Service Principal Credentials (Pipeline Variables) --------
+          # Set pipeline variables: SP_CLIENT_ID, SP_CLIENT_SECRET (secret), SP_TENANT_ID. Enable with USE_SP_CREDS=true
+          - task: AzureCLI@2
+            displayName: 'Login via Service Principal'
+            condition: eq(variables['USE_SP_CREDS'], 'true')
+            inputs:
+              azureSubscription: ''
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with explicit service principal creds.'
+                az login --service-principal -u $SP_CLIENT_ID -p $SP_CLIENT_SECRET --tenant $SP_TENANT_ID
+                az acr login -n $(acrName)
+            env:
+              SP_CLIENT_ID: $(SP_CLIENT_ID)
+              SP_CLIENT_SECRET: $(SP_CLIENT_SECRET)
+              SP_TENANT_ID: $(SP_TENANT_ID)
+
+          # Build & tag image (uses existing multi-stage Dockerfile)
+          - task: Docker@2
+            displayName: 'Build image'
+            inputs:
+              command: build
+              repository: '$(repository)'
+              Dockerfile: 'api/SimpleApi/Dockerfile'
+              buildContext: 'api/SimpleApi'
+              tags: |
+                $(imageTag)
+                latest
+
+          # Push image
+          - task: Docker@2
+            displayName: 'Push image'
+            inputs:
+              command: push
+              repository: '$(repository)'
+              tags: |
+                $(imageTag)
+                latest
+
+          # Show final image reference
+          - script: |
+              echo "Pushed image references:" 
+              echo "  $(acrLoginServer)/$(repository):$(imageTag)"
+              echo "  $(acrLoginServer)/$(repository):latest"
+            displayName: 'Summarize image'
+
+          # (Optional) Output metadata artifact (digest) for downstream deploy stages
+          - script: |
+              set -e
+              DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $(acrLoginServer)/$(repository):$(imageTag) | awk -F'@' '{print $2}')
+              echo "imageDigest=$DIGEST" > image-metadata.txt
+              echo "##vso[task.setvariable variable=imageDigest;isOutput=true]$DIGEST"
+              echo "Image digest: $DIGEST"
+            displayName: 'Capture image digest'
+            name: captureDigest
+
+          - publish: image-metadata.txt
+            artifact: image-metadata
+            displayName: 'Publish image metadata artifact'
+
+# Usage:
+# 1. Replace acrName & pool name.
+# 2. Decide auth method (default is Service Connection). Set variables:
+#    - USE_MANAGED_IDENTITY=true (and remove service connection tasks) OR
+#    - USE_SP_CREDS=true plus SP_CLIENT_ID / SP_CLIENT_SECRET / SP_TENANT_ID
+# 3. Create pipeline in Azure DevOps pointing to this YAML.
+# 4. Ensure the agent can resolve and reach the private endpoint FQDN.
+#
+# Security Hardening Tips:
+# - Restrict agent outbound with NSGs + only required service tags.
+# - Pin base images via digest (update Dockerfile FROM lines once validated):
+#     FROM mcr.microsoft.com/dotnet/sdk:8.0@sha256:<digest>
+# - Enable content trust / scan images post-push (e.g., Defender for Cloud or Trivy).
+# - Use ACR repository-scoped tokens (preview) instead of broad RBAC where suitable.
+# - Consider adding an SBOM (e.g., syft) step.

@@ -129,3 +129,15 @@ $fqdn = $(az containerapp show --name $caName -g $rgSpokeName --query "propertie
 
 ## Minimal API route addition (replaces previous complex routing scripts)
 & .\add-api-route.ps1 -ResourceGroup $rgSpokeName -GatewayName $agwName -ContainerAppName $caName -ApiPath '/api/v2/*' -Priority 90
+
+
+# disable export to allow temporary public access to the ACR
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+$acrName = 'crnascmieoldevaue'
+$v = 'enabled'
+az resource update --resource-group $rgSpokeName `
+    --name $acrName `
+    --resource-type "Microsoft.ContainerRegistry/registries" `
+    --api-version "2021-06-01-preview" `
+    --set "properties.policies.exportPolicy.status=$v" `
+    --set "properties.publicNetworkAccess=$v"  
