@@ -1,0 +1,192 @@
+# Azure DevOps Pipeline: Deploy new revision of SimpleApi Container App
+# --------------------------------------------------------------------
+# Purpose: Update an existing Azure Container App to a new revision using
+# an image already pushed to ACR by the build pipeline.
+#
+# Usage Patterns:
+# 1. Manual run supplying an image tag (default: latest).
+# 2. (Optional) Deploy by image digest (safer + immutable) when provided as a parameter.
+# 3. (Optional) Trigger from a build pipeline via pipeline resource & pass the tag/digest as variables.
+#
+# Prerequisites:
+# - Existing Azure Container App ("containerAppName") bound to the target ACR (pull permissions via managed identity or registry creds).
+# - Azure DevOps Service Connection (azureSubscription) with access to the Container App resource group.
+# - ACR image (repository:tag or repository@digest) already exists.
+#
+# Notes:
+# - Updating the --image automatically creates a NEW revision (if revision mode is multiple). If single revision mode is enabled,
+#   it performs an in-place update.
+# - Revision suffix is made unique per run to aid rollbacks & traffic split scenarios.
+# - If deploying by digest, traffic pinning to a known immutable image is ensured.
+# - Add environment approvals by mapping the deployment job to a DevOps Environment (uncomment environment: stanza below).
+#
+# Security Hardening Ideas (not all implemented by default):
+# - Enforce digest-only deployments (set allowTagDeploy: false via policy / branch rules).
+# - Add image provenance / attestation verification before update.
+# - Integrate post-deployment smoke test & health verification gate.
+
+trigger: none   # Manual or pipeline resource triggered (see 'resources' section example below)
+
+# Example: enable CI trigger on build pipeline artifact publication instead of 'none'
+# resources:
+#   pipelines:
+#     - pipeline: buildSimpleApi
+#       source: SimpleApi-Build   # Name of the build pipeline that produces the image
+#       branch: main
+#       trigger: true
+
+parameters:
+  - name: imageTag
+    displayName: Image tag to deploy (ignored if useDigest = true)
+    type: string
+    default: latest
+  - name: useDigest
+    displayName: Use image digest instead of tag
+    type: boolean
+    default: false
+  - name: imageDigest
+    displayName: Image digest (sha256:....) when useDigest = true
+    type: string
+    default: ''
+  - name: trafficWeight
+    displayName: Traffic weight (0-100) for NEW revision (only applies if multiple revisions & manual traffic)
+    type: number
+    default: 100
+
+variables:
+  # Core deployment identifiers
+  acrName: 'crnascmieoldevaue'
+  repository: 'simpleapi'
+  resourceGroup: 'rg-aca-apps-dev'          # TODO: change to your RG
+  containerAppName: 'simpleapi-app'         # TODO: change to your Container App name
+  azureSubscription: 'SC-ACA'               # Service connection name
+  acrLoginServer: '$(acrName).azurecr.io'
+  # Build metadata helpers
+  shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
+  runId: '$(Build.BuildId)'
+  # Revision suffix (must be <= 63 chars, lower-case, alphanumerics + '-')
+  # Example: r-a1b2c3d-123
+  revisionSuffix: 'r-$(shortSha)-$(runId)'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Deploy
+    displayName: Deploy Container App Revision
+    jobs:
+      - job: DeployRevision
+        displayName: Update Container App Image
+        # environment: 'dev'  # Uncomment & map to a DevOps Environment for approvals / insights
+        steps:
+          - checkout: none  # Not required unless you need repo content (manifests/scripts)
+
+          - task: AzureCLI@2
+            displayName: 'Resolve Image Reference'
+            name: resolveImage
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                echo "Using ACR: $(acrLoginServer)"
+                if [ ${{ parameters.useDigest }} = true ]; then
+                  if [ -z "${{ parameters.imageDigest }}" ]; then
+                    echo "ERROR: useDigest=true but no imageDigest supplied." >&2
+                    exit 1
+                  fi
+                  IMAGE_REF="$(acrLoginServer)/$(repository)@${{ parameters.imageDigest }}"
+                  echo "Resolved immutable image reference: $IMAGE_REF"
+                else
+                  IMAGE_REF="$(acrLoginServer)/$(repository):${{ parameters.imageTag }}"
+                  echo "Resolved tag image reference: $IMAGE_REF"
+                fi
+                echo "##vso[task.setvariable variable=imageRef;isOutput=true]$IMAGE_REF"
+                echo "Revision suffix: $(revisionSuffix)"
+
+          - task: AzureCLI@2
+            displayName: 'Deploy new revision'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                IMAGE_REF='$(resolveImage.imageRef)'
+                echo "Deploying image $IMAGE_REF to Container App $(containerAppName) in RG $(resourceGroup)"
+                # Ensure extension present
+                az extension add --name containerapp --upgrade --yes >/dev/null 2>&1 || true
+
+                # Perform update (creates new revision for multi-revision mode)
+                az containerapp update \ 
+                  --name $(containerAppName) \ 
+                  --resource-group $(resourceGroup) \ 
+                  --image "$IMAGE_REF" \ 
+                  --revision-suffix $(revisionSuffix) \ 
+                  --output none
+
+                echo "Update submitted. Fetching latest revision info..."
+                NEW_REV=$(az containerapp revision list -n $(containerAppName) -g $(resourceGroup) --query "[?ends_with(name, '\"$(revisionSuffix)\"')].name | [0]" -o tsv)
+                if [ -z "$NEW_REV" ]; then
+                  echo "WARNING: Could not immediately find new revision with suffix $(revisionSuffix)." >&2
+                else
+                  echo "New revision: $NEW_REV"
+                  echo "##vso[task.setvariable variable=newRevisionName;isOutput=true]$NEW_REV"
+                fi
+
+          - task: AzureCLI@2
+            displayName: 'Optional: Adjust traffic (if multi-revision)'
+            condition: and(succeeded(), ne('${{ parameters.trafficWeight }}','100'))
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                if [ -z "$(DeployRevision.newRevisionName)" ]; then
+                  echo "No newRevisionName variable set; skipping traffic shift."; exit 0
+                fi
+                echo "Setting traffic: ${{ parameters.trafficWeight }}% -> $(DeployRevision.newRevisionName)"
+                az containerapp revision set-mode -n $(containerAppName) -g $(resourceGroup) --mode multiple >/dev/null 2>&1 || true
+                az containerapp ingress traffic set \ 
+                  -n $(containerAppName) -g $(resourceGroup) \ 
+                  --revision-weight $(DeployRevision.newRevisionName)=${{ parameters.trafficWeight }}
+
+          - task: AzureCLI@2
+            displayName: 'Health check new revision'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                REV_NAME="$(DeployRevision.newRevisionName)"
+                if [ -z "$REV_NAME" ]; then
+                  echo "No revision name captured; skipping health wait."; exit 0
+                fi
+                echo "Waiting for revision $REV_NAME to become Healthy..."
+                for i in {1..30}; do
+                  PHASE=$(az containerapp revision show -n $(containerAppName) -g $(resourceGroup) --revision $REV_NAME --query "properties.healthState" -o tsv || echo 'unknown')
+                  echo "Attempt $i: healthState=$PHASE"
+                  if [ "$PHASE" = "Healthy" ]; then
+                    echo "Revision $REV_NAME is Healthy."; exit 0
+                  fi
+                  sleep 5
+                done
+                echo "Revision $REV_NAME did not reach Healthy state within timeout." >&2
+                exit 1
+
+          - script: |
+              echo "Deployment Summary:" 
+              echo "  App: $(containerAppName)"
+              echo "  RG:  $(resourceGroup)"
+              echo "  Image: $(resolveImage.imageRef)"
+              echo "  Revision Suffix: $(revisionSuffix)"
+              echo "  New Revision: $(DeployRevision.newRevisionName)"
+            displayName: 'Summarize'
+
+# Future Enhancements:
+# - Add SBOM & vulnerability scan gate before deploy.
+# - Integrate smoke test hitting the app endpoint.
+# - Add rollback job to shift traffic back to previous healthy revision.
