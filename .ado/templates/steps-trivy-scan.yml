@@ -25,21 +25,7 @@ steps:
   - script: |
       set -e
       echo "Installing Trivy (modern keyring method)..."
-      # Import GPG key to keyring file (avoids deprecated apt-key usage)
-      sudo mkdir -p /usr/share/keyrings
-      curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb stable main" | sudo tee /etc/apt/sources.list.d/trivy.list
-      sudo apt-get update -y
-      sudo apt-get install -y trivy jq
-      trivy --version
-      # (Optional) Enable DB cache reuse with Azure Pipeline Cache (add a separate cache task before install)
-      # Example (not active here):
-      # - task: Cache@2
-      #   inputs:
-      #     key: 'trivy-db | "$(Agent.OS)"'
-      #     path: '/home/vsts/.cache/trivy'
-      #     restoreKeys: 'trivy-db'
-      #   displayName: 'Cache Trivy DB'
+      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin {{ git.tag }}
       echo "Scanning image: ${{ parameters.imageRef }}"
       TRIVY_ARGS="--severity ${{ parameters.severities }} --no-progress"
       if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
