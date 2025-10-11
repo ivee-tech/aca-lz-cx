@@ -34,3 +34,7 @@ steps:
       arguments: '${{ parameters.additionalBuildArgs }}'
       tags: |
         ${{ parameters.tags }}
+  - script: |
+      echo "Listing images for repository ${{ parameters.repository }} after build:" 
+      docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | grep '${{ parameters.repository }}' || echo 'No images matched filter.'
+    displayName: 'Debug: List built image tags'

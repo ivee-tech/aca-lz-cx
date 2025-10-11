@@ -24,19 +24,38 @@ parameters:
 steps:
   - script: |
       set -e
-      echo "Installing Trivy..."
-      sudo apt-get install wget gnupg
+      echo "Installing Trivy (keyring method) + jq..."
+      sudo apt-get update -y
+      sudo apt-get install -y wget gnupg jq
       wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-      sudo apt-get update
-      sudo apt-get install trivy
-      echo "Scanning image: ${{ parameters.imageRef }}"
+      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee /etc/apt/sources.list.d/trivy.list
+      sudo apt-get update -y
+      sudo apt-get install -y trivy
+      trivy --version
+      echo "Verifying built image exists: ${{ parameters.imageRef }}"
+      if ! docker image inspect ${{ parameters.imageRef }} > /dev/null 2>&1; then
+        echo "Image ${{ parameters.imageRef }} not found locally. Listing available images (top 50):" >&2
+        docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | head -50 >&2 || true
+        echo "Attempting fallback: search for repo suffix match..." >&2
+        BASE_NAME="${{ parameters.imageRef%%:* }}" # repository portion before :tag
+        FALLBACK=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "/$BASE_NAME:" | head -1 || true)
+        if [ -n "$FALLBACK" ]; then
+          echo "Using fallback image reference: $FALLBACK" >&2
+          TARGET_IMAGE="$FALLBACK"
+        else
+          echo "No suitable fallback image found. Failing early." >&2
+          exit 1
+        fi
+      else
+        TARGET_IMAGE='${{ parameters.imageRef }}'
+      fi
+      echo "Scanning image: $TARGET_IMAGE"
       TRIVY_ARGS="--severity ${{ parameters.severities }} --no-progress"
       if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
         TRIVY_ARGS="$TRIVY_ARGS --ignore-unfixed"
       fi
-      trivy image $TRIVY_ARGS -f table -o trivy-report.txt ${{ parameters.imageRef }}
-      trivy image $TRIVY_ARGS -f json -o trivy-report.json ${{ parameters.imageRef }}
+      trivy image $TRIVY_ARGS -f table -o trivy-report.txt "$TARGET_IMAGE"
+      trivy image $TRIVY_ARGS -f json -o trivy-report.json "$TARGET_IMAGE"
       CRIT_COUNT=$(jq '[ .Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") ] | length' trivy-report.json || echo 0)
       echo "Critical vulnerability count: $CRIT_COUNT"
       if [ "${{ parameters.failOnCritical }}" = "true" ] && [ "$CRIT_COUNT" -gt 0 ]; then
