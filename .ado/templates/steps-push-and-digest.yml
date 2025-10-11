@@ -16,17 +16,30 @@ parameters:
     type: string
 
 steps:
-  - task: Docker@2
-    displayName: 'Push image'
-    inputs:
-      command: push
-      repository: '${{ parameters.repository }}'
-      tags: |
-        ${{ parameters.tags }}
+  - script: |
+      set -e
+      echo "Tagging & pushing image(s) to ${{ parameters.acrLoginServer }}"
+      echo "Tags list:" 
+      REPO='${{ parameters.repository }}'
+      LOGIN='${{ parameters.acrLoginServer }}'
+      PRIMARY="$(printf "%s" "${{ parameters.tags }}" | head -1)"
+      if [ -z "$PRIMARY" ]; then
+        echo "No tags provided; aborting push." >&2
+        exit 1
+      fi
+      # Loop through tags
+      printf "%s" "${{ parameters.tags }}" | while read -r t; do
+        [ -z "$t" ] && continue
+        echo "Processing tag: $t"
+        # Create registry-qualified tag
+        docker tag "$REPO:$t" "$LOGIN/$REPO:$t"
+        docker push "$LOGIN/$REPO:$t"
+      done
+    displayName: 'Push image tags (manual)'
 
   - script: |
       echo "Pushed image references:" 
-      while IFS= read -r tag; do
+      printf "%s" "${{ parameters.tags }}" | while read -r tag; do
         [ -z "$tag" ] && continue
         echo "  ${{ parameters.acrLoginServer }}/${{ parameters.repository }}:$tag"
       done
@@ -34,7 +47,20 @@ steps:
 
   - script: |
       set -e
-      DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ parameters.acrLoginServer }}/${{ parameters.imageRefForDigest }} | awk -F'@' '{print $2}')
+      # Use primary tag (first tag) for digest capture
+      PRIMARY="$(printf "%s" "${{ parameters.tags }}" | head -1)"
+      if [ -z "$PRIMARY" ]; then
+        echo "No primary tag found for digest capture" >&2
+        exit 1
+      fi
+      TARGET="${{ parameters.acrLoginServer }}/${{ parameters.repository }}:$PRIMARY"
+      echo "Capturing digest for $TARGET"
+      DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TARGET" | awk -F'@' '{print $2}')
+      if [ -z "$DIGEST" ]; then
+        echo "Failed to obtain digest for $TARGET" >&2
+        docker inspect "$TARGET" || true
+        exit 1
+      fi
       echo "imageDigest=$DIGEST" > image-metadata.txt
       echo "##vso[task.setvariable variable=imageDigest;isOutput=true]$DIGEST"
       echo "Image digest: $DIGEST"
