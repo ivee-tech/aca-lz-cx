@@ -22,11 +22,11 @@ steps:
       command: push
       repository: '${{ parameters.repository }}'
       tags: |
-${{ parameters.tags }}
+        ${{ parameters.tags }}
 
   - script: |
       echo "Pushed image references:" 
-      while IFS= read -r tag; do
+  while IFS= read -r tag; do
         [ -z "$tag" ] && continue
         echo "  ${{ parameters.acrLoginServer }}/${{ parameters.repository }}:$tag"
       done <<'TAGS'

@@ -32,5 +32,5 @@ steps:
       Dockerfile: '${{ parameters.dockerfile }}'
       buildContext: '${{ parameters.buildContext }}'
       arguments: '${{ parameters.additionalBuildArgs }}'
-      tags: | 
-${{ parameters.tags }}
+      tags: |
+        ${{ parameters.tags }}
