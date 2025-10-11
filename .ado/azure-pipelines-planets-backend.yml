@@ -1,0 +1,127 @@
+# Azure DevOps Pipeline: Build & Push Planets Backend (.NET 8 API) image to ACR
+# -----------------------------------------------------------------------------
+# Mirrors the SimpleApi pipeline structure.
+# NOTE: During use of Microsoft-hosted agents, ensure public network access to ACR is enabled.
+# When reverting to private endpoint + self‑hosted agents, restore connectivity checks and pool.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - planets-app/planets-backend/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - planets-app/planets-backend/*
+
+variables:
+  acrName: 'crnascmieoldevaue'          # Same ACR as SimpleApi (adjust if different)
+  repository: 'planets-backend'         # ACR repository name
+  shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
+  imageTag: '$(Build.BuildId)-$(shortSha)'
+  acrLoginServer: '$(acrName).azurecr.io'
+  runConnectivityCheck: 'false'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: BuildAndPush
+    displayName: Build & Push Planets Backend Image
+    jobs:
+      - job: Build
+        displayName: Docker Build & Push
+        steps:
+          - checkout: self
+            clean: true
+
+          # (Optional) connectivity sanity check placeholder (disabled)
+          # - script: |
+          #     echo "Testing DNS for $(acrLoginServer)";
+          #     nslookup $(acrLoginServer) || exit 1
+          #   displayName: 'Connectivity sanity check (disabled)'
+
+          # Auth Option A: Service Connection (preferred default)
+          - task: Docker@2
+            displayName: 'ACR Login (Service Connection)'
+            condition: and(succeeded(), ne(variables['USE_MANAGED_IDENTITY'], 'true'), ne(variables['USE_SP_CREDS'], 'true'))
+            inputs:
+              command: login
+              containerRegistry: 'SC-ACR'   # Replace with your service connection name if different
+
+          # Auth Option B: Managed Identity
+          - task: AzureCLI@2
+            displayName: 'Login via Managed Identity'
+            condition: eq(variables['USE_MANAGED_IDENTITY'], 'true')
+            inputs:
+              azureSubscription: ''
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with managed identity.'
+                az login --identity --allow-no-subscriptions
+                az acr login -n $(acrName)
+
+          # Auth Option C: Service Principal Credentials
+            
+          - task: AzureCLI@2
+            displayName: 'Login via Service Principal'
+            condition: eq(variables['USE_SP_CREDS'], 'true')
+            inputs:
+              azureSubscription: ''
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with explicit service principal credentials.'
+                az login --service-principal -u $SP_CLIENT_ID -p $SP_CLIENT_SECRET --tenant $SP_TENANT_ID
+                az acr login -n $(acrName)
+            env:
+              SP_CLIENT_ID: $(SP_CLIENT_ID)
+              SP_CLIENT_SECRET: $(SP_CLIENT_SECRET)
+              SP_TENANT_ID: $(SP_TENANT_ID)
+
+          # Build image via template
+          - template: templates/steps-build-image.yml
+            parameters:
+              repository: '$(repository)'
+              dockerfile: 'planets-app/planets-backend/Dockerfile'
+              buildContext: 'planets-app'
+              tags: |
+                $(imageTag)
+                latest
+
+          # Trivy vulnerability scan template (local image before push)
+          - template: templates/steps-trivy-scan.yml
+            parameters:
+              imageRef: '$(repository):$(imageTag)'
+              artifactPrefix: 'backend'
+              failOnCritical: 'true'
+              severities: 'HIGH,CRITICAL'
+              ignoreUnfixed: 'true'
+
+          # Syft SBOM + license listing
+          - template: templates/steps-syft-sbom.yml
+            parameters:
+              imageRef: '$(repository):$(imageTag)'
+              artifactPrefix: 'backend'
+
+          # Push & capture digest
+          - template: templates/steps-push-and-digest.yml
+            parameters:
+              repository: '$(repository)'
+              acrLoginServer: '$(acrLoginServer)'
+              imageRefForDigest: '$(repository):$(imageTag)'
+              tags: |
+                $(imageTag)
+                latest
+
+# Notes:
+# - buildContext set to planets-app so Dockerfile relative COPY of Directory.Build.props works.
+# - Ensure repository name exists/created automatically in ACR on first push (default ACR behavior).
+# - Consider adding Trivy/Snyk scan or SBOM generation as a follow-up.

@@ -1,0 +1,35 @@
+# Template: Syft SBOM + license extraction
+# Parameters:
+#   imageRef: repository:tag
+#   artifactPrefix: e.g. backend, frontend
+
+parameters:
+  - name: imageRef
+    type: string
+  - name: artifactPrefix
+    type: string
+
+steps:
+  - script: |
+      set -e
+      echo "Installing Syft..."
+      curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      echo "Generating CycloneDX SBOM for ${{ parameters.imageRef }}"
+      syft packages ${{ parameters.imageRef }} -o cyclonedx-json=sbom-cyclonedx.json
+      echo "Generating SPDX SBOM"
+      syft packages ${{ parameters.imageRef }} -o spdx-json=sbom-spdx.json
+      echo "Generating package/license table"
+      syft packages ${{ parameters.imageRef }} -o table > syft-packages.txt
+    displayName: 'Security: SBOM & license list (${{ parameters.imageRef }})'
+
+  - publish: sbom-cyclonedx.json
+    artifact: sbom-${{ parameters.artifactPrefix }}
+    displayName: 'Publish CycloneDX SBOM'
+
+  - publish: sbom-spdx.json
+    artifact: sbom-${{ parameters.artifactPrefix }}-spdx
+    displayName: 'Publish SPDX SBOM'
+
+  - publish: syft-packages.txt
+    artifact: sbom-${{ parameters.artifactPrefix }}-licenses
+    displayName: 'Publish license/package listing'

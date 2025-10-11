@@ -1,0 +1,39 @@
+trigger:
+- main
+
+variables:
+  REGISTRY_NAME: 'docker-hub' # service connection name
+  IMAGE_NAME: 'planets-web-app'
+  TAG: 'latest'
+  NS: 'daradu'
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      inputs:
+        command: 'build'
+        repository: '$(NS)/$(IMAGE_NAME)'
+        dockerfile: 'Dockerfile'
+        tags: '$(TAG)'
+
+- stage: Push
+  dependsOn: Build
+  jobs:
+  - job: Push
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      inputs:
+        command: 'login'
+        containerRegistry: '$(REGISTRY_NAME)'
+    - task: Docker@2
+      inputs:
+        command: 'push'
+        repository: '$(REGISTRY_NAME)/$(IMAGE_NAME)'
+        tags: '$(TAG)'

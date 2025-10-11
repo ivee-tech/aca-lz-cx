@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System with Three.js</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://82mou.github.io/threejs/js/OrbitControls.js"></script>
+    <script>
+        // Setup scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        // hexa code for purple is #800080
+        // const pointLight = new THREE.PointLight(0x800080, 1, 0);
+        // hexa code for yellow is #ffff00
+        //const pointLight = new THREE.PointLight(0xffff00, 1, 0);
+        const pointLight = new THREE.PointLight(0xffffff, 1, 0);
+        pointLight.position.set(50, 50, 50);
+        scene.add(pointLight);
+
+        const textureLoader = new THREE.TextureLoader();
+
+        // Add the sun
+        const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+        const texture = textureLoader.load('assets/sun.jpg');
+        const sunMaterial = new THREE.MeshStandardMaterial({ map: texture }); // { color: 0xffff00 });
+        const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sunMesh);
+
+        // Planets populated dynamically from backend API
+        const planets = [];
+        // Rockets array must be declared before first animation frame calls updateRockets()
+        const rockets = [];
+        // Queue of incoming rocket launch directives from backend SSE
+        const liveQueue = [];
+
+        async function loadPlanets() {
+            const apiCandidates = [
+                'http://localhost:5279/api/planets',
+                // 'https://localhost:7279/api/planets',
+                // 'http://localhost:5279/planets',
+                // 'https://localhost:7279/planets'
+            ];
+            let data = null;
+            for (const url of apiCandidates) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) { data = await res.json(); break; }
+                } catch { /* try next */ }
+            }
+            if (!data) {
+                console.warn('Falling back to static dataset – API unreachable.');
+                data = [
+                    { name: 'Mercury', size: 0.383, distance: 5.79, speed: 0.08, rotationSpeed: 0.01, textureUrl: 'assets/mercury.jpg' },
+                    { name: 'Venus', size: 0.949, distance: 10.82, speed: 0.03, rotationSpeed: 0.006, textureUrl: 'assets/venus.jpg' },
+                    { name: 'Earth', size: 1, distance: 15, speed: 0.02, rotationSpeed: 0.008, textureUrl: 'assets/earth.jpg' },
+                    { name: 'Mars', size: 0.532, distance: 22.79, speed: 0.016, rotationSpeed: 0.012, textureUrl: 'assets/mars.jpg' },
+                    { name: 'Jupiter', size: 11.21, distance: 77.78, speed: 0.004, rotationSpeed: 0.014, textureUrl: 'assets/jupiter.jpg' },
+                    { name: 'Saturn', size: 9.45, distance: 143.37, speed: 0.002, rotationSpeed: 0.016, textureUrl: 'assets/saturn.jpg' },
+                    { name: 'Uranus', size: 4.01, distance: 287.1, speed: 0.0008, rotationSpeed: 0.018, textureUrl: 'assets/uranus.jpg' },
+                    { name: 'Neptune', size: 3.88, distance: 449.5, speed: 0.0004, rotationSpeed: 0.02, textureUrl: 'assets/neptune.jpg' }
+                ];
+            }
+            data.forEach(p => planets.push({
+                name: p.name,
+                size: p.size,
+                distance: p.distance,
+                speed: p.speed,
+                rotationSpeed: p.rotationSpeed,
+                texture: p.textureUrl
+            }));
+            createPlanetMeshes();
+        }
+
+        function createPlanetMeshes() {
+            planets.forEach(planet => {
+                const texture = textureLoader.load(planet.texture);
+                const geometry = new THREE.SphereGeometry(planet.size, 32, 32);
+                const material = new THREE.MeshStandardMaterial({ map: texture });
+                const mesh = new THREE.Mesh(geometry, material);
+                scene.add(mesh);
+                planet.mesh = mesh;
+                const orbitGeometry = new THREE.RingGeometry(planet.distance - 0.1, planet.distance + 0.1, 64);
+                const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+                const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+                orbit.rotation.x = Math.PI / 2;
+                scene.add(orbit);
+
+                // Add planetary ring systems (Saturn & Uranus) if textures available
+                if (planet.name === 'Saturn') {
+                    addRingSystem(planet, {
+                        texture: 'assets/saturn-rings.jpg',
+                        innerScale: 1.25, // relative to planet radius
+                        outerScale: 2.3,
+                        tiltDegX: 27, // approximate axial tilt for a bit of realism
+                        opacity: 0.9
+                    });
+                } else if (planet.name === 'Uranus') {
+                    addRingSystem(planet, {
+                        texture: 'assets/uranus-rings.jpg',
+                        innerScale: 1.15,
+                        outerScale: 1.9,
+                        tiltDegX: 98, // Uranus essentially on its side
+                        opacity: 0.85
+                    });
+                }
+            });
+
+            // Once planets are created, start launching rockets
+            initRocketSystem();
+            initRocketSse(); // connect to backend for directed launches
+        }
+
+        // Helper to add a textured ring to a planet. Rings are attached as child meshes so they follow the planet's orbit & rotation.
+        function addRingSystem(planet, options) {
+            const { texture, innerScale, outerScale, tiltDegX, opacity } = options;
+            const ringTex = textureLoader.load(texture);
+            // Even though JPG lacks alpha, keep transparent flag in case assets are swapped for PNG later.
+            ringTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
+            const inner = planet.size * innerScale;
+            const outer = planet.size * outerScale;
+            const ringGeo = new THREE.RingGeometry(inner, outer, 128, 1);
+            // Create a faded look using vertex colors (alpha falloff) if possible
+            // Inject simple alpha gradient via custom material with onBeforeCompile (lightweight tweak)
+            const ringMat = new THREE.MeshBasicMaterial({ map: ringTex, side: THREE.DoubleSide, transparent: true, opacity });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            // Default RingGeometry is in XY plane; rotate so it lies in planet's orbital plane (XZ), then apply tilt.
+            ring.rotation.x = Math.PI / 2; // align with orbital plane
+            if (typeof tiltDegX === 'number') {
+                // Apply additional axial tilt around Z axis for a more natural look
+                ring.rotation.z = THREE.MathUtils.degToRad(tiltDegX);
+            }
+            ring.renderOrder = 1; // draw after planet for fewer z-fighting artifacts
+            planet.mesh.add(ring); // center on planet
+            planet.ring = ring;
+        }
+
+        loadPlanets();
+
+        // Orbit controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        camera.position.z = 200;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.0002; // Increase the speed of the orbits
+            planets.forEach(planet => {
+                planet.mesh.rotation.y += planet.rotationSpeed; // Rotate each planet with different speeds
+                const angle = time * planet.speed;
+                planet.mesh.position.x = planet.distance * Math.cos(angle);
+                planet.mesh.position.z = planet.distance * Math.sin(angle);
+            });
+
+            // Update rockets
+            updateRockets();
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    // ---------------- Rocket Launch Feature ----------------
+        const rocketConfig = {
+            minInterval: 5000, // ms
+            maxInterval: 12000, // ms
+            flightDuration: 8000, // ms per flight
+            trailSpawnInterval: 90, // ms between trail particle spawns
+            trailLifetime: 1800, // ms a particle lives
+            maxTrailParticles: 120
+        };
+
+        function initRocketSystem() {
+            // Ensure Earth exists before scheduling
+            if (!planets.find(p => p.name.toLowerCase() === 'earth')) return;
+            scheduleNextLaunch();
+        }
+
+        function scheduleNextLaunch() {
+            const interval = THREE.MathUtils.randInt(rocketConfig.minInterval, rocketConfig.maxInterval);
+            setTimeout(() => {
+                if (liveQueue.length > 0) {
+                    const msg = liveQueue.shift();
+                    if (msg?.destination) launchDirectedRocket(msg.destination);
+                    // else launchRandomRocket();
+                } else {
+                    // launchRandomRocket();
+                }
+                scheduleNextLaunch();
+            }, interval);
+        }
+
+        function initRocketSse() {
+            const endpoints = [
+                'http://localhost:5279/api/rockets/stream'
+            ];
+            let connected = false;
+            for (const url of endpoints) {
+                try {
+                    const es = new EventSource(url);
+                    es.onmessage = e => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data?.destination) liveQueue.push(data);
+                        } catch { }
+                    };
+                    es.onerror = () => { es.close(); connected = false; };
+                    console.log('Connected to rocket SSE', url);
+                    connected = true;
+                    break;
+                } catch { }
+            }
+            if (!connected) console.warn('Rocket SSE stream unavailable – using random launches only.');
+        }
+
+        function launchRandomRocket() {
+            const earth = planets.find(p => p.name.toLowerCase() === 'earth');
+            const candidates = planets.filter(p => p !== earth);
+            if (!earth || candidates.length === 0) return;
+            const target = candidates[Math.floor(Math.random() * candidates.length)];
+            launchBetween(earth, target);
+        }
+
+        function launchDirectedRocket(destinationName) {
+            const earth = planets.find(p => p.name.toLowerCase() === 'earth');
+            const target = planets.find(p => p.name.toLowerCase() === destinationName.toLowerCase());
+            if (!earth || !target || earth === target) return;
+            launchBetween(earth, target);
+        }
+
+        function launchBetween(earth, target) {
+            const start = earth.mesh.position.clone();
+            const end = target.mesh.position.clone();
+            const mid = start.clone().add(end).multiplyScalar(0.5);
+            mid.y += start.distanceTo(end) * 0.25 + 5;
+            const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+            const points = curve.getPoints(50);
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.7 });
+            const trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
+            scene.add(trajectoryLine);
+            const rocket = createRocketMesh();
+            rocket.position.copy(start.clone().setY(start.y + earth.size * 0.2 + 0.5));
+            scene.add(rocket);
+            rockets.push({
+                mesh: rocket,
+                line: trajectoryLine,
+                curve,
+                startTime: performance.now(),
+                duration: rocketConfig.flightDuration,
+                disposed: false,
+                lastTrailTime: 0,
+                trail: []
+            });
+        }
+
+        function createRocketMesh() {
+            const group = new THREE.Group();
+            const bodyGeo = new THREE.CylinderGeometry(0.2, 0.25, 1.2, 12);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.2, roughness: 0.6 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            group.add(body);
+            const noseGeo = new THREE.ConeGeometry(0.25, 0.5, 12);
+            const noseMat = new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.3, roughness: 0.4 });
+            const nose = new THREE.Mesh(noseGeo, noseMat);
+            nose.position.y = 0.85; // top of body
+            group.add(nose);
+            const finGeo = new THREE.BoxGeometry(0.05, 0.3, 0.4);
+            const finMat = new THREE.MeshStandardMaterial({ color: 0x3333ff });
+            for (let i = 0; i < 3; i++) {
+                const fin = new THREE.Mesh(finGeo, finMat);
+                fin.position.y = -0.5;
+                fin.rotation.y = (i / 3) * Math.PI * 2;
+                fin.position.x = Math.sin(fin.rotation.y) * 0.25;
+                fin.position.z = Math.cos(fin.rotation.y) * 0.25;
+                group.add(fin);
+            }
+            return group;
+        }
+
+        function updateRockets() {
+            if (rockets.length === 0) return;
+            const now = performance.now();
+            for (let i = rockets.length - 1; i >= 0; i--) {
+                const r = rockets[i];
+                const t = (now - r.startTime) / r.duration;
+                if (t >= 1) {
+                    // fade out & cleanup
+                    if (!r.disposed) {
+                        scene.remove(r.mesh);
+                        scene.remove(r.line);
+                        disposeObject(r.mesh);
+                        disposeObject(r.line);
+                        r.disposed = true;
+                    }
+                    rockets.splice(i, 1);
+                    continue;
+                }
+                const eased = easeInOutCubic(t);
+                const pos = r.curve.getPoint(eased);
+                r.mesh.position.copy(pos);
+                // Orient rocket along tangent
+                const tangent = r.curve.getTangent(eased).normalize();
+                const axis = new THREE.Vector3(0, 1, 0);
+                const quat = new THREE.Quaternion().setFromUnitVectors(axis, tangent.clone().normalize());
+                r.mesh.setRotationFromQuaternion(quat);
+                // Add gentle roll
+                r.mesh.rotateY(now * 0.002);
+
+                // Trail spawning
+                if (now - r.lastTrailTime > rocketConfig.trailSpawnInterval) {
+                    spawnTrailParticle(r);
+                    r.lastTrailTime = now;
+                }
+                updateTrail(r, now);
+            }
+        }
+
+        function spawnTrailParticle(rocket) {
+            if (rocket.trail.length >= rocketConfig.maxTrailParticles) {
+                // Recycle oldest
+                const oldest = rocket.trail.shift();
+                scene.remove(oldest.mesh);
+                disposeObject(oldest.mesh);
+            }
+            const geo = new THREE.SphereGeometry(0.12, 8, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffddaa, transparent: true, opacity: 0.9 });
+            const particle = new THREE.Mesh(geo, mat);
+            particle.position.copy(rocket.mesh.position);
+            scene.add(particle);
+            rocket.trail.push({ mesh: particle, born: performance.now() });
+        }
+
+        function updateTrail(rocket, now) {
+            for (let i = rocket.trail.length - 1; i >= 0; i--) {
+                const p = rocket.trail[i];
+                const age = now - p.born;
+                const t = age / rocketConfig.trailLifetime;
+                if (t >= 1) {
+                    scene.remove(p.mesh);
+                    disposeObject(p.mesh);
+                    rocket.trail.splice(i, 1);
+                    continue;
+                }
+                const fade = 1 - t; // linear fade; could ease
+                p.mesh.material.opacity = fade;
+                const scale = 1 - t * 0.7; // slight shrink
+                p.mesh.scale.setScalar(scale);
+            }
+        }
+
+        function disposeObject(obj) {
+            obj.traverse?.(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+            });
+        }
+
+        function easeInOutCubic(x) {
+            return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+        }
+        // --------------------------------------------------------
+    </script>
+</body>
+
+</html>

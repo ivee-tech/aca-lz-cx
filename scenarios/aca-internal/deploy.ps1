@@ -15,7 +15,7 @@ $rgHubName = 'rg-nasc-hub-dev-001'
 $templateFile = './bicep/modules/02-spoke/deploy.spoke.bicep'
 $parametersFile = './bicep/modules/02-spoke/deploy.spoke.parameters.jsonc'
 $fwName = 'azfw-nasc-dev-aue'
-$vmAdminPassword = 'AAAbbb12345!@#'
+$vmAdminPassword = '***'
 $FW_IP_ADDRESS = $(az network firewall show --name $fwName --resource-group $rgHubName --query "ipConfigurations[0].privateIpAddress" --output tsv)
 
 <#

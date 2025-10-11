@@ -1,0 +1,55 @@
+# Template: Trivy Vulnerability Scan (fails on CRITICAL count > 0)
+# Parameters:
+#   imageRef: local image reference (e.g. repository:tag)
+#   artifactPrefix: prefix for artifact names (e.g. backend, frontend)
+#   failOnCritical: bool (string) 'true'/'false'
+#   severities: e.g. HIGH,CRITICAL
+#   ignoreUnfixed: 'true' or 'false'
+
+parameters:
+  - name: imageRef
+    type: string
+  - name: artifactPrefix
+    type: string
+  - name: failOnCritical
+    type: string
+    default: 'true'
+  - name: severities
+    type: string
+    default: 'HIGH,CRITICAL'
+  - name: ignoreUnfixed
+    type: string
+    default: 'true'
+
+steps:
+  - script: |
+      set -e
+      echo "Installing Trivy..."
+      curl -sSL https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+      echo deb https://aquasecurity.github.io/trivy-repo/deb stable main | sudo tee /etc/apt/sources.list.d/trivy.list
+      sudo apt-get update -y
+      sudo apt-get install -y trivy jq
+      echo "Scanning image: ${{ parameters.imageRef }}"
+      TRIVY_ARGS="--severity ${{ parameters.severities }} --no-progress"
+      if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
+        TRIVY_ARGS="$TRIVY_ARGS --ignore-unfixed"
+      fi
+      trivy image $TRIVY_ARGS -f table -o trivy-report.txt ${{ parameters.imageRef }}
+      trivy image $TRIVY_ARGS -f json -o trivy-report.json ${{ parameters.imageRef }}
+      CRIT_COUNT=$(jq '[ .Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") ] | length' trivy-report.json || echo 0)
+      echo "Critical vulnerability count: $CRIT_COUNT"
+      if [ "${{ parameters.failOnCritical }}" = "true" ] && [ "$CRIT_COUNT" -gt 0 ]; then
+        echo "Failing due to CRITICAL vulnerabilities." >&2
+        exit 1
+      fi
+    displayName: 'Security: Trivy scan (${{ parameters.imageRef }})'
+    env:
+      TZ: UTC
+
+  - publish: trivy-report.txt
+    artifact: security-trivy-${{ parameters.artifactPrefix }}
+    displayName: 'Publish Trivy text report'
+
+  - publish: trivy-report.json
+    artifact: security-trivy-${{ parameters.artifactPrefix }}-json
+    displayName: 'Publish Trivy JSON report'

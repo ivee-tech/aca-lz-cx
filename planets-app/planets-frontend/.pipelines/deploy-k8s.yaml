@@ -1,0 +1,17 @@
+trigger:
+  none
+
+stages:
+- stage: Build_Ui_Image
+  variables:
+  - name: ns
+    value: planets
+  jobs:
+  - job: Deploy_Manifests
+    pool:
+      name: 'Demos'
+    steps:
+    - script: |
+        cd $(Pipeline.Workspace)/s/planets/.k8s
+        kubectl apply -f ./planets-web-app-dep.yaml -f ./planets-web-app-svc.yaml -n $NS
+      displayName: 'Deploy manifests'

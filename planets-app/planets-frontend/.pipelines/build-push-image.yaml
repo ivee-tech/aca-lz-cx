@@ -1,0 +1,31 @@
+trigger:
+  none
+
+stages:
+- stage: Build_Web_Api_Image
+  variables:
+  - name: acrName
+    value: 'ktbacr'
+  - name: dockerfilePath
+    value: './Dockerfile'
+  - name: tag
+    value: latest
+  - name: registry
+    value: $(acrName).azurecr.io
+  - name: rns
+    value: planets
+  jobs:
+  - job: Build_Push_ACR_Image
+    pool:
+      name: 'Demos'
+    steps:
+    - script: |
+        img="planets-web-app:$TAG"
+        az login --identity
+        sudo az acr login --name $ACRNAME
+        cd $(Pipeline.Workspace)/s/planets
+        sudo docker build -t $img -f $DOCKERFILEPATH .
+
+        sudo docker tag ${img} $REGISTRY/$RNS/$img
+        sudo docker push $REGISTRY/$RNS/$img
+      displayName: 'Build & push container image to ACR'

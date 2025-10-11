@@ -1,0 +1,118 @@
+# Azure DevOps Pipeline: Build & Push Planets Frontend (Nginx static site) image to ACR
+# -------------------------------------------------------------------------------
+# Follows same auth + tag pattern as other pipelines.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - planets-app/planets-frontend/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - planets-app/planets-frontend/*
+
+variables:
+  acrName: 'crnascmieoldevaue'
+  repository: 'planets-frontend'
+  shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
+  imageTag: '$(Build.BuildId)-$(shortSha)'
+  acrLoginServer: '$(acrName).azurecr.io'
+  runConnectivityCheck: 'false'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: BuildAndPush
+    displayName: Build & Push Planets Frontend Image
+    jobs:
+      - job: Build
+        displayName: Docker Build & Push
+        steps:
+          - checkout: self
+            clean: true
+
+          # Auth Option A: Service Connection
+          - task: Docker@2
+            displayName: 'ACR Login (Service Connection)'
+            condition: and(succeeded(), ne(variables['USE_MANAGED_IDENTITY'], 'true'), ne(variables['USE_SP_CREDS'], 'true'))
+            inputs:
+              command: login
+              containerRegistry: 'SC-ACR'
+
+          # Auth Option B: Managed Identity
+          - task: AzureCLI@2
+            displayName: 'Login via Managed Identity'
+            condition: eq(variables['USE_MANAGED_IDENTITY'], 'true')
+            inputs:
+              azureSubscription: ''
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with managed identity.'
+                az login --identity --allow-no-subscriptions
+                az acr login -n $(acrName)
+
+          # Auth Option C: Service Principal Credentials
+          - task: AzureCLI@2
+            displayName: 'Login via Service Principal'
+            condition: eq(variables['USE_SP_CREDS'], 'true')
+            inputs:
+              azureSubscription: ''
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                echo 'Logging in with explicit service principal credentials.'
+                az login --service-principal -u $SP_CLIENT_ID -p $SP_CLIENT_SECRET --tenant $SP_TENANT_ID
+                az acr login -n $(acrName)
+            env:
+              SP_CLIENT_ID: $(SP_CLIENT_ID)
+              SP_CLIENT_SECRET: $(SP_CLIENT_SECRET)
+              SP_TENANT_ID: $(SP_TENANT_ID)
+
+          # Build image via template
+          - template: templates/steps-build-image.yml
+            parameters:
+              repository: '$(repository)'
+              dockerfile: 'planets-app/planets-frontend/Dockerfile'
+              buildContext: 'planets-app/planets-frontend'
+              tags: |
+                $(imageTag)
+                latest
+
+          # Trivy vulnerability scan
+          - template: templates/steps-trivy-scan.yml
+            parameters:
+              imageRef: '$(repository):$(imageTag)'
+              artifactPrefix: 'frontend'
+              failOnCritical: 'true'
+              severities: 'HIGH,CRITICAL'
+              ignoreUnfixed: 'true'
+
+          # Syft SBOM generation
+          - template: templates/steps-syft-sbom.yml
+            parameters:
+              imageRef: '$(repository):$(imageTag)'
+              artifactPrefix: 'frontend'
+
+          # Push & digest capture
+          - template: templates/steps-push-and-digest.yml
+            parameters:
+              repository: '$(repository)'
+              acrLoginServer: '$(acrLoginServer)'
+              imageRefForDigest: '$(repository):$(imageTag)'
+              tags: |
+                $(imageTag)
+                latest
+
+# Future enhancements:
+# - Add cache-from for faster rebuilds.
+# - Integrate vulnerability scanning.
+# - Inject build-time hash into an index.html meta tag (add a tiny pre-step) if desired.

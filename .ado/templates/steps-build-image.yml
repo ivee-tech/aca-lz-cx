@@ -1,0 +1,36 @@
+# Template: Build Docker Image
+# Usage:
+# - template: .ado/templates/steps-build-image.yml@self
+#   parameters:
+#     repository: myapp
+#     dockerfile: path/to/Dockerfile
+#     buildContext: .
+#     tags: |
+#       $(imageTag)
+#       latest
+#     additionalBuildArgs: ''
+
+parameters:
+  - name: repository
+    type: string
+  - name: dockerfile
+    type: string
+  - name: buildContext
+    type: string
+  - name: tags
+    type: string
+  - name: additionalBuildArgs
+    type: string
+    default: ''
+
+steps:
+  - task: Docker@2
+    displayName: 'Build image ($(repository))'
+    inputs:
+      command: build
+      repository: '${{ parameters.repository }}'
+      Dockerfile: '${{ parameters.dockerfile }}'
+      buildContext: '${{ parameters.buildContext }}'
+      arguments: '${{ parameters.additionalBuildArgs }}'
+      tags: | 
+${{ parameters.tags }}
