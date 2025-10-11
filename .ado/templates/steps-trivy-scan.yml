@@ -32,23 +32,7 @@ steps:
       sudo apt-get update -y
       sudo apt-get install -y trivy
       trivy --version
-      echo "Verifying built image exists: ${{ parameters.imageRef }}"
-      if ! docker image inspect ${{ parameters.imageRef }} > /dev/null 2>&1; then
-        echo "Image ${{ parameters.imageRef }} not found locally. Listing available images (top 50):" >&2
-        docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | head -50 >&2 || true
-        echo "Attempting fallback: search for repo suffix match..." >&2
-        BASE_NAME="${{ parameters.imageRef%%:* }}" # repository portion before :tag
-        FALLBACK=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "/$BASE_NAME:" | head -1 || true)
-        if [ -n "$FALLBACK" ]; then
-          echo "Using fallback image reference: $FALLBACK" >&2
-          TARGET_IMAGE="$FALLBACK"
-        else
-          echo "No suitable fallback image found. Failing early." >&2
-          exit 1
-        fi
-      else
-        TARGET_IMAGE='${{ parameters.imageRef }}'
-      fi
+      TARGET_IMAGE='${{ parameters.imageRef }}'
       echo "Scanning image: $TARGET_IMAGE"
       TRIVY_ARGS="--severity ${{ parameters.severities }} --no-progress"
       if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
