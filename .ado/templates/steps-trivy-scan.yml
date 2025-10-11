@@ -38,9 +38,11 @@ steps:
       if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
         TRIVY_ARGS="$TRIVY_ARGS --ignore-unfixed"
       fi
-      trivy image $TRIVY_ARGS -f table -o trivy-report.txt "$TARGET_IMAGE"
-      trivy image $TRIVY_ARGS -f json -o trivy-report.json "$TARGET_IMAGE"
-      CRIT_COUNT=$(jq '[ .Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") ] | length' trivy-report.json || echo 0)
+      # Generate SARIF output (single authoritative report)
+      trivy image $TRIVY_ARGS -f sarif -o trivy-report.sarif "$TARGET_IMAGE"
+      # Generate ephemeral JSON (not published) only for counting CRITICAL findings
+      trivy image $TRIVY_ARGS -f json -o trivy-ephemeral.json "$TARGET_IMAGE" >/dev/null 2>&1 || true
+      CRIT_COUNT=$(jq '[ .Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") ] | length' trivy-ephemeral.json 2>/dev/null || echo 0)
       echo "Critical vulnerability count: $CRIT_COUNT"
       if [ "${{ parameters.failOnCritical }}" = "true" ] && [ "$CRIT_COUNT" -gt 0 ]; then
         echo "Failing due to CRITICAL vulnerabilities." >&2
@@ -50,10 +52,6 @@ steps:
     env:
       TZ: UTC
 
-  - publish: trivy-report.txt
-    artifact: security-trivy-${{ parameters.artifactPrefix }}
-    displayName: 'Publish Trivy text report'
-
-  - publish: trivy-report.json
-    artifact: security-trivy-${{ parameters.artifactPrefix }}-json
-    displayName: 'Publish Trivy JSON report'
+  - publish: trivy-report.sarif
+    artifact: security-trivy-${{ parameters.artifactPrefix }}-sarif
+    displayName: 'Publish Trivy SARIF report'
