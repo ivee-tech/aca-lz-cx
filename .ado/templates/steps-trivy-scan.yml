@@ -24,8 +24,12 @@ parameters:
 steps:
   - script: |
       set -e
-      echo "Installing Trivy (modern keyring method)..."
-      curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin {{ git.tag }}
+      echo "Installing Trivy..."
+      sudo apt-get install wget gnupg
+      wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+      sudo apt-get update
+      sudo apt-get install trivy
       echo "Scanning image: ${{ parameters.imageRef }}"
       TRIVY_ARGS="--severity ${{ parameters.severities }} --no-progress"
       if [ "${{ parameters.ignoreUnfixed }}" = "true" ]; then
