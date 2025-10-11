@@ -1,4 +1,4 @@
-# Template: Build Docker Image
+# Template: Build Docker Image (manual docker CLI build; local tags only)
 # Usage:
 # - template: .ado/templates/steps-build-image.yml@self
 #   parameters:
@@ -24,17 +24,25 @@ parameters:
     default: ''
 
 steps:
-  - task: Docker@2
-    displayName: 'Build image ($(repository))'
-    inputs:
-      command: build
-      repository: '${{ parameters.repository }}'
-      Dockerfile: '${{ parameters.dockerfile }}'
-      buildContext: '${{ parameters.buildContext }}'
-      arguments: '${{ parameters.additionalBuildArgs }}'
-      tags: |
-        ${{ parameters.tags }}
   - script: |
-      echo "Listing images for repository ${{ parameters.repository }} after build:" 
-      docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | grep '${{ parameters.repository }}' || echo 'No images matched filter.'
+      set -e
+      echo "Building image locally via docker CLI"
+      echo "Repository base: ${{ parameters.repository }}"
+      FIRST_TAG=$(printf "%s" "${{ parameters.tags }}" | head -1)
+      if [ -z "$FIRST_TAG" ]; then
+        echo "No tags provided; aborting." >&2
+        exit 1
+      fi
+      echo "Primary build tag: $FIRST_TAG"
+      docker build -f "${{ parameters.dockerfile }}" "${{ parameters.buildContext }}" -t "${{ parameters.repository }}:$FIRST_TAG" ${{ parameters.additionalBuildArgs }}
+      printf "%s" "${{ parameters.tags }}" | tail -n +2 | while read -r t; do
+        [ -z "$t" ] && continue
+        echo "Tagging additional: $t"
+        docker tag "${{ parameters.repository }}:$FIRST_TAG" "${{ parameters.repository }}:$t"
+      done
+    displayName: 'Build image (docker CLI)'
+
+  - script: |
+      echo "Listing images for repository ${{ parameters.repository }} after build:"
+      docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}' | grep '^${{ parameters.repository }}:' || echo 'No exact local-only tags found.'
     displayName: 'Debug: List built image tags'
