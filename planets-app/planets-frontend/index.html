@@ -17,6 +17,7 @@
 </head>
 
 <body>
+    <script src="config/api-base.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://82mou.github.io/threejs/js/OrbitControls.js"></script>
     <script>
@@ -54,20 +55,24 @@
         // Queue of incoming rocket launch directives from backend SSE
         const liveQueue = [];
 
-        async function loadPlanets() {
-            const apiCandidates = [
-                'http://localhost:5279/api/planets',
-                // 'https://localhost:7279/api/planets',
-                // 'http://localhost:5279/planets',
-                // 'https://localhost:7279/planets'
-            ];
-            let data = null;
-            for (const url of apiCandidates) {
-                try {
-                    const res = await fetch(url);
-                    if (res.ok) { data = await res.json(); break; }
-                } catch { /* try next */ }
+        function resolveApiBase() {
+            // Prefer injected value; fallback to current origin
+            if (typeof window.API_BASE_URL === 'string' && window.API_BASE_URL.trim().length > 0) {
+                return window.API_BASE_URL.replace(/\/$/, '');
             }
+            return window.location.origin;
+        }
+
+        async function loadPlanets() {
+            const base = resolveApiBase();
+            const apiUrl = `${base}/api/planets`;
+            let data = null;
+            try {
+                const res = await fetch(apiUrl);
+                if (res.ok) {
+                    data = await res.json();
+                }
+            } catch { /* ignore; will fallback */ }
             if (!data) {
                 console.warn('Falling back to static dataset – API unreachable.');
                 data = [
@@ -218,26 +223,21 @@
         }
 
         function initRocketSse() {
-            const endpoints = [
-                'http://localhost:5279/api/rockets/stream'
-            ];
-            let connected = false;
-            for (const url of endpoints) {
-                try {
-                    const es = new EventSource(url);
-                    es.onmessage = e => {
-                        try {
-                            const data = JSON.parse(e.data);
-                            if (data?.destination) liveQueue.push(data);
-                        } catch { }
-                    };
-                    es.onerror = () => { es.close(); connected = false; };
-                    console.log('Connected to rocket SSE', url);
-                    connected = true;
-                    break;
-                } catch { }
+            const base = resolveApiBase();
+            const url = `${base}/api/rockets/stream`;
+            try {
+                const es = new EventSource(url);
+                es.onmessage = e => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data?.destination) liveQueue.push(data);
+                    } catch { }
+                };
+                es.onerror = () => { es.close(); console.warn('Rocket SSE stream error; closing.'); };
+                console.log('Connected to rocket SSE', url);
+            } catch {
+                console.warn('Rocket SSE stream unavailable – using random launches only.');
             }
-            if (!connected) console.warn('Rocket SSE stream unavailable – using random launches only.');
         }
 
         function launchRandomRocket() {

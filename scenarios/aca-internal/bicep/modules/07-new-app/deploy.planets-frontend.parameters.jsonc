@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "AustraliaEast" },
+    "tags": { "value": { "app": "planets", "tier": "frontend" } },
+    "containerAppName": { "value": "ca-nasc-planets-web" },
+    "containerImage": { "value": "crnascmieoldevaue.azurecr.io/planets-frontend:latest" },
+    "targetPort": { "value": 80 },
+    "cpuAllocation": { "value": "0.25" },
+    "memoryAllocation": { "value": "0.5Gi" },
+    "minReplicas": { "value": 1 },
+    "maxReplicas": { "value": 2 },
+    "containerAppsEnvironmentName": { "value": "cae-nasc-dev-aue" },
+    "acrUmiName": { "value": "id-crnascmieoldevaue-AcrPull" },
+    "containerRegistryName": { "value": "crnascmieoldevaue" },
+    "environmentVariables": { "value": [
+      { "name": "API_BASE_URL", "value": "https://ca-nasc-planets-api.<FQDN_SUFFIX>" }
+    ] },
+    "secrets": { "value": [] }
+  }
+}

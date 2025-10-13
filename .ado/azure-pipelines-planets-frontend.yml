@@ -24,7 +24,6 @@ variables:
   shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
   imageTag: '$(Build.BuildId)-$(shortSha)'
   acrLoginServer: '$(acrName).azurecr.io'
-  runConnectivityCheck: 'false'
 
 pool:
   vmImage: 'ubuntu-latest'
