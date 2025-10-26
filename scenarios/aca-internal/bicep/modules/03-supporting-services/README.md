@@ -14,6 +14,8 @@ Workloads often have resources that exist on different lifecycles. Some are sing
 - Azure Key Vault
 - Private Link for each, including related DNS Private Zone configuration
 - User managed identities for the workload
+- Azure Service Bus namespace with private networking (optional)
+- Azure SQL server, database, and private endpoint (optional)
 
 By default, they are deployed to the spoke resource group.
 
@@ -43,6 +45,8 @@ By default, they are deployed to the spoke resource group.
       -p hubVNetId=${RESOURCEID_VNET_HUB} spokeVNetId=${RESOURCEID_VNET_SPOKE} \
       -p logAnalyticsWorkspaceId=${LOG_ANALYTICS_WS_ID}
    ```
+
+   > :information_source: The sample parameter file now includes toggles for deploying the Service Bus namespace (`deployServiceBus`) and Azure SQL resources (`deploySqlDatabase`). Update queue names, database SKU, and especially `sqlAdministratorPassword` before running the deployment.
 
 ## Private DNS Zones
 

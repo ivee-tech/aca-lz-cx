@@ -69,6 +69,9 @@ var resourceNames = {
   routeTable: replace(namingBase, resourceTypeToken, naming.resourceTypeAbbreviations.routeTable)
   serviceBus: replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.serviceBus)
   serviceBusPep: '${naming.resourceTypeAbbreviations.privateEndpoint}-${replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.serviceBus)}'
+  sqlServer: toLower(take(replace(replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.sqlServer), '-', ''), 63))
+  sqlServerPep: '${naming.resourceTypeAbbreviations.privateEndpoint}-${toLower(replace(replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.sqlServer), '-', ''))}'
+  sqlDatabase: toLower(take(replace(replace(namingBase, resourceTypeToken, naming.resourceTypeAbbreviations.sqlDatabase), '-', ''), 63))
   storageAccount: toLower(take( replace ( replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.storageAccount), '-', ''), 24))
   storageAccountPep: '${naming.resourceTypeAbbreviations.privateEndpoint}-${toLower( replace(namingBaseUnique, resourceTypeToken, naming.resourceTypeAbbreviations.storageAccount))}'
   vmJumpBox: replace(namingBaseNoWorkloadName, resourceTypeToken, naming.resourceTypeAbbreviations.virtualMachine)

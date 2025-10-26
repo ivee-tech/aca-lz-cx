@@ -10,6 +10,9 @@ param location string = resourceGroup().location
 @description('The name of the redis cache to be created.')
 param redisName string
 
+@description('Controls whether the Redis cache resources are deployed.')
+param deploy bool = true
+
 @description('Optional. The tags to be assigned to the created resources.')
 param tags object = {}
 
@@ -82,7 +85,7 @@ resource spokePrivateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2
 }
 
 @description('Azure Redis Cache used for your workload.')
-module redis '../../../../../shared/bicep/redis.bicep' = {
+module redis '../../../../../shared/bicep/redis.bicep' = if (deploy) {
   name: 'redis-${uniqueString(resourceGroup().id)}'
   params: {
     name: redisName
@@ -96,11 +99,11 @@ module redis '../../../../../shared/bicep/redis.bicep' = {
   }
 }
 
-module redisPrivateNetworking '../../../../../shared/bicep/network/private-networking.bicep' = {
+module redisPrivateNetworking '../../../../../shared/bicep/network/private-networking.bicep' = if (deploy) {
   name: 'redisPrivateNetworking-${uniqueString(resourceGroup().id)}'
   params: {
     location: location
-    azServiceId: redis.outputs.resourceId
+  azServiceId: redis!.outputs.resourceId
     azServicePrivateDnsZoneName: privateDnsZoneNames
     privateEndpointName: redisCachePrivateEndpointName
     privateEndpointSubResourceName: redisResourceName
@@ -111,4 +114,4 @@ module redisPrivateNetworking '../../../../../shared/bicep/network/private-netwo
 }
 
 @description('The secret name to retrieve the connection string from KeyVault')
-output redisCacheSecretKey string = redis.outputs.redisConnectionStringSecretName
+output redisCacheSecretKey string = deploy ? redis!.outputs.redisConnectionStringSecretName : ''

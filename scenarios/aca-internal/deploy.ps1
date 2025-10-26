@@ -40,11 +40,13 @@ $templateFile = './bicep/modules/03-supporting-services/deploy.supporting-servic
 $parametersFile = './bicep/modules/03-supporting-services/deploy.supporting-services.parameters.jsonc'
 $rgSpokeName = 'rg-nasc-spoke-dev-001'
 
+$sqlAdministratorPassword = 'AAAbbb12345!@#'
 az deployment group create `
     -n acalza01-supporting-services `
     -g $rgSpokeName `
     -f $templateFile `
-    -p $parametersFile
+    -p $parametersFile `
+    -p sqlAdministratorPassword=$sqlAdministratorPassword
 
 # deploy ACA environment
 $templateFile = './bicep/modules/04-container-apps-environment/deploy.aca-environment.bicep'
@@ -141,3 +143,21 @@ az resource update --resource-group $rgSpokeName `
     --api-version "2021-06-01-preview" `
     --set "properties.policies.exportPolicy.status=$v" `
     --set "properties.publicNetworkAccess=$v"  
+
+# deploy planets backend app
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+$templateFile = './bicep/modules/07-new-app/deploy.new-container-app.bicep'
+$parametersFile = './bicep/modules/07-new-app/deploy.planets-backend.parameters.jsonc'
+az deployment group create `
+  --resource-group $rgSpokeName `
+  --template-file $templateFile `
+  --parameters $parametersFile
+
+# deploy planets frontend app
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+$templateFile = './bicep/modules/07-new-app/deploy.new-container-app.bicep'
+$parametersFile = './bicep/modules/07-new-app/deploy.planets-frontend.parameters.jsonc'
+az deployment group create `
+  --resource-group $rgSpokeName `
+  --template-file $templateFile `
+  --parameters $parametersFile

@@ -40,6 +40,70 @@ param deployRedisCache bool
 @description('Deploy (or not) an Azure OpenAI account. ATTENTION: At the time of writing this, OpenAI is in preview and only available in limited regions: look here: https://learn.microsoft.com/azure/ai-services/openai/chatgpt-quickstart#prerequisites')
 param deployOpenAi bool
 
+@description('Deploy an Azure Service Bus namespace for the workload.')
+param deployServiceBus bool = false
+
+@description('Deploy an Azure SQL database for the workload.')
+param deploySqlDatabase bool = false
+
+@description('Queue names to create when deploying the Service Bus namespace.')
+param serviceBusQueueNames array = []
+
+@description('Topic names to create when deploying the Service Bus namespace.')
+param serviceBusTopicNames array = []
+
+@description('Service Bus namespace SKU.')
+@allowed([
+  'Basic'
+  'Standard'
+  'Premium'
+])
+param serviceBusSkuName string = 'Premium'
+
+@description('Messaging units used when deploying a Premium Service Bus namespace.')
+param serviceBusCapacity int = 1
+
+@description('Enable zone redundancy for the Service Bus namespace (Premium SKU only).')
+param serviceBusZoneRedundant bool = true
+
+@description('Public network access setting for the Service Bus namespace.')
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param serviceBusPublicNetworkAccess string = 'Disabled'
+
+@description('Allow trusted Azure services to access the Service Bus namespace when public network access is disabled.')
+param serviceBusAllowTrustedServicesAccess bool = true
+
+@description('Administrator login for the Azure SQL server.')
+param sqlAdministratorLogin string = 'sqladminuser'
+
+@secure()
+@description('Administrator password for the Azure SQL server (required when deploySqlDatabase = true).')
+param sqlAdministratorPassword string = ''
+
+@description('The name of the Azure SQL database.')
+param sqlDatabaseName string = 'planetsdb'
+
+@description('Azure SQL database SKU name (for example, GP_Gen5_2 or S0).')
+param sqlDatabaseSkuName string = 'GP_Gen5_2'
+
+@description('Azure SQL database SKU tier.')
+param sqlDatabaseSkuTier string = 'GeneralPurpose'
+
+@description('Azure SQL database compute capacity. Set to 0 when not required by the SKU.')
+param sqlDatabaseSkuCapacity int = 0
+
+@description('Azure SQL database compute family. Leave empty when not required by the SKU.')
+param sqlDatabaseSkuFamily string = ''
+
+@description('Azure SQL database maximum size in GB.')
+param sqlDatabaseMaxSizeGb int = 32
+
+@description('Enable zone redundancy for the Azure SQL database (supported tiers only).')
+param sqlDatabaseZoneRedundant bool = false
+
 @description('Deploy (or not) a model on the openAI Account. This is used only as a sample to show how to deploy a model on the OpenAI account.')
 param deployOpenAiGptModel bool = false
 
@@ -86,6 +150,8 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-11
   scope: resourceGroup(laWorkspaceRGName)
 }
 
+var logAnalyticsWorkspaceId = (laWorkspaceName != '' && laWorkspaceRGName != '') ? logAnalyticsWorkspace.id : ''
+
 @description('Azure Container Registry, where all workload images should be pulled from.')
 module containerRegistry 'modules/container-registry.module.bicep' = {
   name: 'containerRegistry-${uniqueString(resourceGroup().id)}'
@@ -99,7 +165,7 @@ module containerRegistry 'modules/container-registry.module.bicep' = {
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     containerRegistryPrivateEndpointName: naming.outputs.resourcesNames.containerRegistryPep
     containerRegistryUserAssignedIdentityName: naming.outputs.resourcesNames.containerRegistryUserAssignedIdentity
-    diagnosticWorkspaceId: logAnalyticsWorkspace.id
+  diagnosticWorkspaceId: logAnalyticsWorkspaceId
     deployZoneRedundantResources: deployZoneRedundantResources
   }
 }
@@ -116,17 +182,18 @@ module keyVault 'modules/key-vault.bicep' = {
     hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     keyVaultPrivateEndpointName: naming.outputs.resourcesNames.keyVaultPep
-    diagnosticWorkspaceId: logAnalyticsWorkspace.id
+  diagnosticWorkspaceId: logAnalyticsWorkspaceId
   }
 }
 
 
-module redisCache 'modules/redis-cache.bicep' = if (deployRedisCache) {
+module redisCache 'modules/redis-cache.bicep' = {
   name: 'redisCache-${uniqueString(resourceGroup().id)}'
   params: {
+    deploy: deployRedisCache
     location: location
     redisName: naming.outputs.resourcesNames.redisCache
-    logAnalyticsWsId: logAnalyticsWorkspace.id
+    logAnalyticsWsId: logAnalyticsWorkspaceId
     keyVaultName: keyVault.outputs.keyVaultName
     spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
@@ -137,20 +204,69 @@ module redisCache 'modules/redis-cache.bicep' = if (deployRedisCache) {
 }
 
 
-module openAi 'modules/open-ai.module.bicep'= if(deployOpenAi) {
+module openAi 'modules/open-ai.module.bicep'= {
   name: take('openAiModule-Deployment', 64)
   params: {
+    deploy: deployOpenAi
     name: naming.outputs.resourcesNames.openAiAccount
     deploymentName: naming.outputs.resourcesNames.openAiDeployment
     location: location
     tags: tags
     vnetHubResourceId: hubVNet.id
-    logAnalyticsWsId: logAnalyticsWorkspace.id
+    logAnalyticsWsId: logAnalyticsWorkspaceId
     deployOpenAiGptModel: deployOpenAiGptModel
     spokeVNetId: spokeVNet.id
     hubVNetName: hubVNetName
     hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
+  }
+}
+
+module serviceBus 'modules/service-bus.bicep' = {
+  name: 'serviceBus-${uniqueString(resourceGroup().id)}'
+  params: {
+    deploy: deployServiceBus
+    location: location
+    tags: tags
+    serviceBusName: naming.outputs.resourcesNames.serviceBus
+    skuName: serviceBusSkuName
+    capacity: serviceBusCapacity
+    queueNames: serviceBusQueueNames
+    topicNames: serviceBusTopicNames
+    zoneRedundant: serviceBusZoneRedundant
+    publicNetworkAccess: serviceBusPublicNetworkAccess
+    allowTrustedServicesAccess: serviceBusAllowTrustedServicesAccess
+    hubVNetId: hubVNet.id
+    hubVNetName: hubVNetName
+    spokeVNetId: spokeVNet.id
+    spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
+    serviceBusPrivateEndpointName: naming.outputs.resourcesNames.serviceBusPep
+  workspaceId: logAnalyticsWorkspaceId
+  }
+}
+
+module sqlDatabase 'modules/sql-database.bicep' = {
+  name: 'sqlDatabase-${uniqueString(resourceGroup().id)}'
+  params: {
+    deploy: deploySqlDatabase
+    location: location
+    tags: tags
+    sqlServerName: naming.outputs.resourcesNames.sqlServer
+    sqlDatabaseName: sqlDatabaseName
+    administratorLogin: sqlAdministratorLogin
+    administratorLoginPassword: sqlAdministratorPassword
+    skuName: sqlDatabaseSkuName
+    skuTier: sqlDatabaseSkuTier
+    skuCapacity: sqlDatabaseSkuCapacity
+    skuFamily: sqlDatabaseSkuFamily
+    maxSizeGb: sqlDatabaseMaxSizeGb
+    zoneRedundant: sqlDatabaseZoneRedundant
+    hubVNetId: hubVNet.id
+    hubVNetName: hubVNetName
+    spokeVNetId: spokeVNet.id
+    spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
+    sqlPrivateEndpointName: naming.outputs.resourcesNames.sqlServerPep
+  workspaceId: logAnalyticsWorkspaceId
   }
 }
 
@@ -180,7 +296,31 @@ output keyVaultId string = keyVault.outputs.keyVaultId
 output keyVaultName string = keyVault.outputs.keyVaultName
 
 @description('The secret name to retrieve the connection string from KeyVault')
-output redisCacheSecretKey string = (deployRedisCache)? redisCache.outputs.redisCacheSecretKey : ''
+output redisCacheSecretKey string = redisCache.outputs.redisCacheSecretKey
 
 @description('The name of the Azure Open AI account name.')
-output openAIAccountName string = (deployOpenAi)? openAi.outputs.name : ''
+output openAIAccountName string = openAi.outputs.name
+
+@description('The Service Bus namespace name.')
+output serviceBusNamespaceName string = serviceBus.outputs.serviceBusName
+
+@description('The Service Bus namespace connection string.')
+output serviceBusConnectionString string = serviceBus.outputs.serviceBusConnectionString
+
+@description('Metadata for Service Bus queues created by this deployment.')
+output serviceBusQueues array = serviceBus.outputs.serviceBusQueues
+
+@description('Metadata for Service Bus topics created by this deployment.')
+output serviceBusTopics array = serviceBus.outputs.serviceBusTopics
+
+@description('The Azure SQL server name.')
+output sqlServerName string = sqlDatabase.outputs.sqlServerName
+
+@description('The Azure SQL server fully qualified domain name.')
+output sqlServerFqdn string = sqlDatabase.outputs.sqlServerFqdn
+
+@description('The Azure SQL database name.')
+output sqlDatabaseName string = sqlDatabase.outputs.sqlDatabaseName
+
+@description('The Azure SQL database resource ID.')
+output sqlDatabaseId string = sqlDatabase.outputs.sqlDatabaseId

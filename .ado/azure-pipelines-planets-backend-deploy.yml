@@ -1,0 +1,194 @@
+## Azure DevOps Pipeline: Deploy new revision of Planets Backend Container App
+## --------------------------------------------------------------------------
+# Triggers when the build pipeline for planets backend finishes (pipeline resource)
+# and/or can be run manually providing an image tag or digest. Updates the existing
+# Container App with a new revision using the ACR image. Supports tag or digest-based
+# immutable deployments and optional traffic weighting when multiple revisions mode.
+
+trigger: none  # Deployment is event or manually triggered (see resources below)
+
+resources:
+  pipelines:
+    - pipeline: planetsBackendBuild          # Alias inside this YAML
+      source: Planets-Backend-Build          # Name of the build pipeline that produces/pushes the image
+      branch: main
+      trigger: true                          # Enable automatic deploy after successful build
+
+parameters:
+  - name: imageTag
+    displayName: Image tag to deploy (ignored if useDigest = true). For auto trigger, leave default to use build output tag.
+    type: string
+    default: ''
+  - name: useDigest
+    displayName: Use immutable image digest instead of tag
+    type: boolean
+    default: true
+  - name: imageDigest
+    displayName: Explicit image digest (sha256:...) override (leave blank to auto-resolve from build artifact)
+    type: string
+    default: ''
+  - name: trafficWeight
+    displayName: Traffic weight (0-100) for NEW revision (multi-revision only). 100 = full cutover.
+    type: number
+    default: 100
+  - name: forceMultipleRevisions
+    displayName: Force Container App to multiple revision mode before traffic assignment
+    type: boolean
+    default: false
+
+variables:
+  # Core identifiers (adjust to your environment)
+  acrName: 'crnascmieoldevaue'
+  repository: 'planets-backend'
+  resourceGroup: 'rg-aca-apps-dev'          # TODO: set your RG
+  containerAppName: 'ca-nasc-planets-api'   # TODO: set your Container App name
+  azureSubscription: 'SC-ACA'               # Service connection name
+  acrLoginServer: '$(acrName).azurecr.io'
+
+  # Derived build metadata (fallback when run manually)
+  shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
+  runId: '$(Build.BuildId)'
+  revisionSuffix: 'r-$(shortSha)-$(runId)'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Deploy
+    displayName: Deploy Planets Backend Revision
+    jobs:
+      - job: DeployRevision
+        displayName: Update Container App Image
+        steps:
+          - checkout: none
+
+          # Step 1: Acquire image reference (tag or digest). Prefer digest for immutability.
+          - task: AzureCLI@2
+            name: resolveImage
+            displayName: 'Resolve Image Reference'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                echo "Using ACR: $(acrLoginServer)"
+                # Auto-detect digest from upstream pipeline artifact if not supplied
+                AUTO_DIGEST=""
+                if [ -d "$(Pipeline.Workspace)/planetsBackendBuild/image-metadata" ]; then
+                  # The build pipeline publishes image-metadata artifact with imageDigest variable
+                  META_FILE="$(Pipeline.Workspace)/planetsBackendBuild/image-metadata/image-metadata.txt"
+                  if [ -f "$META_FILE" ]; then
+                    AUTO_DIGEST=$(grep -E '^imageDigest=' "$META_FILE" | cut -d'=' -f2- || true)
+                  fi
+                fi
+                echo "Auto-detected digest: $AUTO_DIGEST"
+                USE_DIGEST=${{ parameters.useDigest }}
+                EXPLICIT_DIGEST='${{ parameters.imageDigest }}'
+                IMAGE_TAG_PARAM='${{ parameters.imageTag }}'
+                if [ "$USE_DIGEST" = "true" ]; then
+                  DIGEST_TO_USE="$EXPLICIT_DIGEST"
+                  if [ -z "$DIGEST_TO_USE" ]; then
+                    DIGEST_TO_USE="$AUTO_DIGEST"
+                  fi
+                  if [ -z "$DIGEST_TO_USE" ]; then
+                    echo "ERROR: useDigest=true but no digest was supplied or found in artifact." >&2
+                    exit 1
+                  fi
+                  IMAGE_REF="$(acrLoginServer)/$(repository)@${DIGEST_TO_USE}";
+                  echo "Resolved immutable image reference: $IMAGE_REF";
+                else
+                  # Determine tag: parameter > build variable exported (if any) > 'latest'
+                  TAG_TO_USE="$IMAGE_TAG_PARAM"
+                  if [ -z "$TAG_TO_USE" ]; then
+                    # Attempt to infer from build pipeline variable (imageTag naming scheme). Not always exported, so fallback.
+                    TAG_TO_USE="latest"
+                  fi
+                  IMAGE_REF="$(acrLoginServer)/$(repository):${TAG_TO_USE}";
+                  echo "Resolved tag image reference: $IMAGE_REF";
+                fi
+                echo "##vso[task.setvariable variable=imageRef;isOutput=true]$IMAGE_REF"
+                echo "Revision suffix: $(revisionSuffix)"
+
+          # Step 2: Update Container App to new image (creates new revision when multi-revision or updates single)
+          - task: AzureCLI@2
+            name: updateApp
+            displayName: 'Deploy New Revision'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add --name containerapp --upgrade --yes >/dev/null 2>&1 || true
+                IMAGE_REF='$(resolveImage.imageRef)'
+                echo "Deploying $IMAGE_REF -> $(containerAppName) in $(resourceGroup)"
+                az containerapp update \
+                  --name $(containerAppName) \
+                  --resource-group $(resourceGroup) \
+                  --image "$IMAGE_REF" \
+                  --revision-suffix $(revisionSuffix) \
+                  --output none
+                # Capture revision name (best effort)
+                NEW_REV=$(az containerapp revision list -n $(containerAppName) -g $(resourceGroup) --query "[?contains(name,'$(revisionSuffix)')].name | [0]" -o tsv || true)
+                echo "New revision candidate: $NEW_REV"
+                echo "##vso[task.setvariable variable=newRevisionName;isOutput=true]$NEW_REV"
+
+          # Step 3: Optional traffic assignment (only if weighting != 100)
+          - task: AzureCLI@2
+            displayName: 'Adjust Traffic Weight'
+            condition: and(succeeded(), ne('${{ parameters.trafficWeight }}','100'))
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                if [ -z "$(updateApp.newRevisionName)" ]; then
+                  echo "No newRevisionName captured; skipping traffic shift."; exit 0
+                fi
+                if [ ${{ parameters.forceMultipleRevisions }} = true ]; then
+                  az containerapp revision set-mode -n $(containerAppName) -g $(resourceGroup) --mode multiple
+                fi
+                echo "Setting traffic ${{ parameters.trafficWeight }}% to $(updateApp.newRevisionName)"
+                az containerapp ingress traffic set \
+                  -n $(containerAppName) -g $(resourceGroup) \
+                  --revision-weight $(updateApp.newRevisionName)=${{ parameters.trafficWeight }}
+
+          # Step 4: Health wait loop
+          - task: AzureCLI@2
+            displayName: 'Wait for Healthy Revision'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                REV='$(updateApp.newRevisionName)'
+                [ -z "$REV" ] && echo "No revision name found; skipping health check." && exit 0
+                echo "Waiting for revision $REV health=Healthy"
+                for i in {1..36}; do
+                  STATE=$(az containerapp revision show -n $(containerAppName) -g $(resourceGroup) --revision $REV --query properties.healthState -o tsv || echo 'unknown')
+                  echo "Attempt $i: $STATE"
+                  [ "$STATE" = "Healthy" ] && echo "Revision healthy." && exit 0
+                  sleep 5
+                done
+                echo "Revision failed to become Healthy in time." >&2
+                exit 1
+
+          # Step 5: Summary
+          - script: |
+              echo "Deployment Summary:" 
+              echo "  Container App : $(containerAppName)" 
+              echo "  Resource Group: $(resourceGroup)" 
+              echo "  Image Ref     : $(resolveImage.imageRef)" 
+              echo "  Revision Sfx  : $(revisionSuffix)" 
+              echo "  New Revision  : $(updateApp.newRevisionName)" 
+              echo "  Traffic Weight: ${{ parameters.trafficWeight }}"
+            displayName: 'Summarize'
+
+# Notes:
+# - Ensure the build pipeline publishes image-metadata artifact with digest (template already does this).
+# - If you rename the build pipeline, update resources.pipelines.source accordingly.
+# - Set variable 'forceMultipleRevisions' to true if you want to maintain previous revisions and shift traffic gradually.
+# - For production, consider adding approvals via DevOps Environments and integrating smoke tests or rollback logic.

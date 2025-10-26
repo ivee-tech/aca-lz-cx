@@ -25,6 +25,8 @@
         "serviceBus": "sb",
         "serviceBusQueue": "sbq",
         "serviceBusTopic": "sbt",
+    "sqlServer": "sql",
+    "sqlDatabase": "sqldb",
         "storageAccount": "st",
         "virtualMachine": "vm",
         "virtualNetwork": "vnet",

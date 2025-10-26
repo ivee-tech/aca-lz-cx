@@ -15,6 +15,24 @@
     },
     // if true Azure Cache for Redis (Premium SKU), together with Private Endpoint and the relavant Private DNS Zone will be deployed
     "deployRedisCache": {
+      "value": false
+    },
+    // Controls deployment of the Service Bus namespace and related resources
+    "deployServiceBus": {
+      "value": true
+    },
+    // Queues created in the Service Bus namespace
+    "serviceBusQueueNames": {
+      "value": [
+        "rocket-messages"
+      ]
+    },
+    // Topics created in the Service Bus namespace
+    "serviceBusTopicNames": {
+      "value": []
+    },
+    // Controls whether the Azure SQL resources are deployed
+    "deploySqlDatabase": {
       "value": true
     },
     // Replace with the resource names of the spoke virtual network 
@@ -44,6 +62,50 @@
     // Deploy (or not) an Azure OpenAI account. ATTENTION: At the time of writing , OpenAI is in preview and only available in limited regions: look here: https://learn.microsoft.com/azure/ai-services/openai/chatgpt-quickstart#prerequisites
     "deployOpenAi": {
       "value": false
+    },
+    // Update the administrator login if required when deploying the SQL database
+    "sqlAdministratorLogin": {
+      "value": "sqladminuser"
+    },
+    // Replace with a secure password before running deployments
+    "sqlAdministratorPassword": {
+      "value": "***"
+    },
+    "sqlDatabaseName": {
+      "value": "planetsdb"
+    },
+    "sqlDatabaseSkuName": {
+      "value": "GP_Gen5_2"
+    },
+    "sqlDatabaseSkuTier": {
+      "value": "GeneralPurpose"
+    },
+    "sqlDatabaseSkuCapacity": {
+      "value": 2
+    },
+    "sqlDatabaseSkuFamily": {
+      "value": "Gen5"
+    },
+    "sqlDatabaseMaxSizeGb": {
+      "value": 32
+    },
+    "sqlDatabaseZoneRedundant": {
+      "value": false
+    },
+    "serviceBusSkuName": {
+      "value": "Premium"
+    },
+    "serviceBusCapacity": {
+      "value": 1
+    },
+    "serviceBusZoneRedundant": {
+      "value": true
+    },
+    "serviceBusPublicNetworkAccess": {
+      "value": "Disabled"
+    },
+    "serviceBusAllowTrustedServicesAccess": {
+      "value": true
     }
   }
 }

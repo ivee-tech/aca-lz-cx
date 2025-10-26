@@ -40,8 +40,8 @@ param deadLetteringOnMessageExpiration bool = false
 @description('Specifies the duplicate detection history time of the queue.')
 param duplicateDetectionHistoryTimeWindow string = 'PT10M'
 
-@description('Specifies the resource id of the Log Analytics workspace.')
-param workspaceId string
+@description('Specifies the resource id of the Log Analytics workspace. Leave empty to skip diagnostics configuration.')
+param workspaceId string = ''
 
 @description('Specifies the workspace data retention in days.')
 param retentionInDays int = 0
@@ -144,7 +144,7 @@ resource topic 'Microsoft.ServiceBus/namespaces/topics@2022-10-01-preview' = [fo
   }
 }]
 
-resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(workspaceId)) {
   name: diagnosticSettingsName
   scope: namespace
   properties: {

@@ -3,6 +3,9 @@
 @maxLength(64)
 param name string
 
+@description('Controls whether the Azure OpenAI resources are deployed.')
+param deploy bool = true
+
 @description('Required. Name of the sample deployment. Deployment Name can have only letters and numbers, no spaces. Hyphens ("-") and underscores ("_") may be used, except as ending characters.')
 @minLength(2)
 @maxLength(64)
@@ -72,7 +75,7 @@ resource spokePrivateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2
 }
 
 
-module openAI '../../../../../shared/bicep/cognitive-services/open-ai.bicep' = {
+module openAI '../../../../../shared/bicep/cognitive-services/open-ai.bicep' = if (deploy) {
   name: take('openAI-${name}-Deployment', 64)
   params: {
     name: name
@@ -88,7 +91,7 @@ module openAI '../../../../../shared/bicep/cognitive-services/open-ai.bicep' = {
   }
 }
 
-module gpt35TurboDeployment  '../../../../../shared/bicep/cognitive-services/open-ai.Gpt.deployment.bicep' = if (deployOpenAiGptModel) {
+module gpt35TurboDeployment  '../../../../../shared/bicep/cognitive-services/open-ai.Gpt.deployment.bicep' = if (deploy && deployOpenAiGptModel) {
     name: take('GPT-${name}-Deployment', 64)
     params: {
       openAiName: name
@@ -99,7 +102,7 @@ module gpt35TurboDeployment  '../../../../../shared/bicep/cognitive-services/ope
     ]
 }
 
-module openAiPrivateDnsZoneHub '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (!empty(hubVNetName)) {
+module openAiPrivateDnsZoneHub '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (deploy && !empty(hubVNetName)) {
   scope: resourceGroup(vnetHubSplitTokens[2], vnetHubSplitTokens[4])
   name: take('${replace(openAiDnsZoneName, '.', '-')}-PrivateDnsZoneDeployment', 64)
   params: {
@@ -109,7 +112,7 @@ module openAiPrivateDnsZoneHub '../../../../../shared/bicep/network/private-dns-
   }
 }
 
-module openAiPrivateDnsZoneLocal '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (empty(hubVNetName)) {
+module openAiPrivateDnsZoneLocal '../../../../../shared/bicep/network/private-dns-zone.bicep' = if (deploy && empty(hubVNetName)) {
   name: take('${replace(openAiDnsZoneName, '.', '-')}-PrivateDnsZoneDeployment', 64)
   params: {
     name: openAiDnsZoneName
@@ -118,18 +121,18 @@ module openAiPrivateDnsZoneLocal '../../../../../shared/bicep/network/private-dn
   }
 }
 
-module peOpenAI '../../../../../shared/bicep/network/private-endpoint.bicep' = {
+module peOpenAI '../../../../../shared/bicep/network/private-endpoint.bicep' = if (deploy) {
   name: take('pe-${name}-Deployment', 64)
   params: {
     name: take('pe-${name}', 64)
     location: location
     tags: tags
     privateDnsZonesId: !empty(hubVNetName) ? openAiPrivateDnsZoneHub!.outputs.privateDnsZonesId : openAiPrivateDnsZoneLocal!.outputs.privateDnsZonesId
-    privateLinkServiceId: openAI.outputs.resourceId
+    privateLinkServiceId: openAI!.outputs.resourceId
     snetId: spokePrivateEndpointSubnet.id
     subresource: 'account'
   }
 }
 
 @description('The name of the Azure Open AI account name.')
-output name string = openAI.outputs.name
+output name string = deploy ? openAI!.outputs.name : ''
