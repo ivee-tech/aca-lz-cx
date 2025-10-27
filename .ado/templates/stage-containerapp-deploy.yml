@@ -1,0 +1,159 @@
+parameters:
+  - name: stageName
+    type: string
+    default: Deploy
+  - name: stageDisplayName
+    type: string
+    default: Deploy Container App Revision
+  - name: jobName
+    type: string
+    default: DeployRevision
+  - name: jobDisplayName
+    type: string
+    default: Update Container App Image
+  - name: buildPipelineAlias
+    type: string
+  - name: azureSubscription
+    type: string
+  - name: useDigest
+    type: boolean
+    default: true
+  - name: imageDigest
+    type: string
+    default: ''
+  - name: imageTag
+    type: string
+    default: ''
+  - name: trafficWeight
+    type: number
+    default: 100
+  - name: forceMultipleRevisions
+    type: boolean
+    default: false
+
+stages:
+  - stage: ${{ parameters.stageName }}
+    displayName: ${{ parameters.stageDisplayName }}
+    jobs:
+      - job: ${{ parameters.jobName }}
+        displayName: ${{ parameters.jobDisplayName }}
+        steps:
+          - checkout: none
+
+          - task: AzureCLI@2
+            name: resolveImage
+            displayName: Resolve Image Reference
+            inputs:
+              azureSubscription: ${{ parameters.azureSubscription }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                echo "Using ACR: $(acrLoginServer)"
+                ARTIFACT_ALIAS='${{ parameters.buildPipelineAlias }}'
+                META_DIR="$(Pipeline.Workspace)/${ARTIFACT_ALIAS}/image-metadata"
+                AUTO_DIGEST=""
+                if [ -d "$META_DIR" ]; then
+                  META_FILE="$META_DIR/image-metadata.txt"
+                  if [ -f "$META_FILE" ]; then
+                    AUTO_DIGEST=$(grep -E '^imageDigest=' "$META_FILE" | cut -d'=' -f2- || true)
+                  fi
+                fi
+                echo "Auto-detected digest: $AUTO_DIGEST"
+                USE_DIGEST=${{ parameters.useDigest }}
+                EXPLICIT_DIGEST='${{ parameters.imageDigest }}'
+                IMAGE_TAG_PARAM='${{ parameters.imageTag }}'
+                if [ "$USE_DIGEST" = "true" ]; then
+                  DIGEST_TO_USE="$EXPLICIT_DIGEST"
+                  if [ -z "$DIGEST_TO_USE" ]; then
+                    DIGEST_TO_USE="$AUTO_DIGEST"
+                  fi
+                  if [ -z "$DIGEST_TO_USE" ]; then
+                    echo "ERROR: useDigest=true but no digest was supplied or found in artifact." >&2
+                    exit 1
+                  fi
+                  IMAGE_REF="$(acrLoginServer)/$(repository)@${DIGEST_TO_USE}"
+                  echo "Resolved immutable image reference: $IMAGE_REF"
+                else
+                  TAG_TO_USE="$IMAGE_TAG_PARAM"
+                  if [ -z "$TAG_TO_USE" ]; then
+                    TAG_TO_USE="latest"
+                  fi
+                  IMAGE_REF="$(acrLoginServer)/$(repository):${TAG_TO_USE}"
+                  echo "Resolved tag image reference: $IMAGE_REF"
+                fi
+                echo "##vso[task.setvariable variable=imageRef;isOutput=true]$IMAGE_REF"
+                echo "Revision suffix: $(revisionSuffix)"
+
+          - task: AzureCLI@2
+            name: updateApp
+            displayName: Deploy New Revision
+            inputs:
+              azureSubscription: ${{ parameters.azureSubscription }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add --name containerapp --upgrade --yes >/dev/null 2>&1 || true
+                IMAGE_REF='$(resolveImage.imageRef)'
+                echo "Deploying $IMAGE_REF -> $(containerAppName) in $(resourceGroup)"
+                az containerapp update \
+                  --name $(containerAppName) \
+                  --resource-group $(resourceGroup) \
+                  --image "$IMAGE_REF" \
+                  --revision-suffix $(revisionSuffix) \
+                  --output none
+                NEW_REV=$(az containerapp revision list -n $(containerAppName) -g $(resourceGroup) --query "[?contains(name,'$(revisionSuffix)')].name | [0]" -o tsv || true)
+                echo "New revision candidate: $NEW_REV"
+                echo "##vso[task.setvariable variable=newRevisionName;isOutput=true]$NEW_REV"
+
+          - task: AzureCLI@2
+            displayName: Adjust Traffic Weight
+            condition: and(succeeded(), ne('${{ parameters.trafficWeight }}','100'))
+            inputs:
+              azureSubscription: ${{ parameters.azureSubscription }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                if [ -z "$(updateApp.newRevisionName)" ]; then
+                  echo "No newRevisionName captured; skipping traffic shift."
+                  exit 0
+                fi
+                if [ ${{ parameters.forceMultipleRevisions }} = true ]; then
+                  az containerapp revision set-mode -n $(containerAppName) -g $(resourceGroup) --mode multiple
+                fi
+                echo "Setting traffic ${{ parameters.trafficWeight }}% to $(updateApp.newRevisionName)"
+                az containerapp ingress traffic set \
+                  -n $(containerAppName) -g $(resourceGroup) \
+                  --revision-weight $(updateApp.newRevisionName)=${{ parameters.trafficWeight }}
+
+          - task: AzureCLI@2
+            displayName: Wait for Healthy Revision
+            inputs:
+              azureSubscription: ${{ parameters.azureSubscription }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                REV='$(updateApp.newRevisionName)'
+                [ -z "$REV" ] && echo "No revision name found; skipping health check." && exit 0
+                echo "Waiting for revision $REV health=Healthy"
+                for i in {1..36}; do
+                  STATE=$(az containerapp revision show -n $(containerAppName) -g $(resourceGroup) --revision $REV --query properties.healthState -o tsv || echo 'unknown')
+                  echo "Attempt $i: $STATE"
+                  [ "$STATE" = "Healthy" ] && echo "Revision healthy." && exit 0
+                  sleep 5
+                done
+                echo "Revision failed to become Healthy in time." >&2
+                exit 1
+
+          - script: |
+              echo "Deployment Summary:" 
+              echo "  Container App : $(containerAppName)" 
+              echo "  Resource Group: $(resourceGroup)" 
+              echo "  Image Ref     : $(resolveImage.imageRef)" 
+              echo "  Revision Sfx  : $(revisionSuffix)" 
+              echo "  New Revision  : $(updateApp.newRevisionName)" 
+              echo "  Traffic Weight: ${{ parameters.trafficWeight }}"
+            displayName: Summarize
