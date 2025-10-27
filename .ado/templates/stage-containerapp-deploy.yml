@@ -20,10 +20,10 @@ parameters:
     default: true
   - name: imageDigest
     type: string
-    default: ''
+    default: 'N/A'
   - name: imageTag
     type: string
-    default: ''
+    default: 'N/A'
   - name: trafficWeight
     type: number
     default: 100
@@ -63,6 +63,12 @@ stages:
                 USE_DIGEST=${{ parameters.useDigest }}
                 EXPLICIT_DIGEST='${{ parameters.imageDigest }}'
                 IMAGE_TAG_PARAM='${{ parameters.imageTag }}'
+                if [ "$EXPLICIT_DIGEST" = "N/A" ]; then
+                  EXPLICIT_DIGEST=""
+                fi
+                if [ "$IMAGE_TAG_PARAM" = "N/A" ]; then
+                  IMAGE_TAG_PARAM=""
+                fi
                 if [ "$USE_DIGEST" = "true" ]; then
                   DIGEST_TO_USE="$EXPLICIT_DIGEST"
                   if [ -z "$DIGEST_TO_USE" ]; then

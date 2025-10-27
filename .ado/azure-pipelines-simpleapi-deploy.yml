@@ -45,9 +45,9 @@ parameters:
     type: boolean
     default: false
   - name: imageDigest
-    displayName: Image digest (sha256:....) when useDigest = true
+    displayName: Image digest (sha256:....) when useDigest = true (leave as N/A when not used)
     type: string
-    default: ''
+    default: 'N/A'
   - name: trafficWeight
     displayName: Traffic weight (0-100) for NEW revision (only applies if multiple revisions & manual traffic)
     type: number
@@ -91,12 +91,16 @@ stages:
               inlineScript: |
                 set -euo pipefail
                 echo "Using ACR: $(acrLoginServer)"
+                DIGEST_PARAM="${{ parameters.imageDigest }}"
+                if [ "$DIGEST_PARAM" = "N/A" ]; then
+                  DIGEST_PARAM=""
+                fi
                 if [ ${{ parameters.useDigest }} = true ]; then
-                  if [ -z "${{ parameters.imageDigest }}" ]; then
+                  if [ -z "$DIGEST_PARAM" ]; then
                     echo "ERROR: useDigest=true but no imageDigest supplied." >&2
                     exit 1
                   fi
-                  IMAGE_REF="$(acrLoginServer)/$(repository)@${{ parameters.imageDigest }}"
+                  IMAGE_REF="$(acrLoginServer)/$(repository)@${DIGEST_PARAM}"
                   echo "Resolved immutable image reference: $IMAGE_REF"
                 else
                   IMAGE_REF="$(acrLoginServer)/$(repository):${{ parameters.imageTag }}"

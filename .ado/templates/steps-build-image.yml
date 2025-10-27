@@ -8,7 +8,7 @@
 #     tags: |
 #       $(imageTag)
 #       latest
-#     additionalBuildArgs: ''
+#     additionalBuildArgs: 'N/A'
 
 parameters:
   - name: repository
@@ -21,20 +21,25 @@ parameters:
     type: string
   - name: additionalBuildArgs
     type: string
-    default: ''
+    default: 'N/A'
 
 steps:
   - script: |
       set -e
       echo "Building image locally via docker CLI"
       echo "Repository base: ${{ parameters.repository }}"
+      ADDITIONAL_ARGS="${{ parameters.additionalBuildArgs }}"
+      if [ "$ADDITIONAL_ARGS" = "N/A" ]; then
+        ADDITIONAL_ARGS=""
+      fi
       FIRST_TAG=$(printf "%s" "${{ parameters.tags }}" | head -1)
       if [ -z "$FIRST_TAG" ]; then
         echo "No tags provided; aborting." >&2
         exit 1
       fi
       echo "Primary build tag: $FIRST_TAG"
-      docker build -f "${{ parameters.dockerfile }}" "${{ parameters.buildContext }}" -t "${{ parameters.repository }}:$FIRST_TAG" ${{ parameters.additionalBuildArgs }}
+      [ -n "$ADDITIONAL_ARGS" ] && echo "Using additional build args: $ADDITIONAL_ARGS"
+      docker build -f "${{ parameters.dockerfile }}" "${{ parameters.buildContext }}" -t "${{ parameters.repository }}:$FIRST_TAG" $ADDITIONAL_ARGS
       printf "%s" "${{ parameters.tags }}" | tail -n +2 | while read -r t; do
         [ -z "$t" ] && continue
         echo "Tagging additional: $t"

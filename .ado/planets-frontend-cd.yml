@@ -14,17 +14,17 @@ resources:
 
 parameters:
   - name: imageTag
-    displayName: Image tag to deploy (ignored if useDigest = true). For auto trigger, leave default to use build output tag.
+    displayName: Image tag to deploy (ignored if useDigest = true). Leave as N/A to use build output tag.
     type: string
-    default: ''
+    default: 'N/A'
   - name: useDigest
     displayName: Use immutable image digest instead of tag
     type: boolean
     default: true
   - name: imageDigest
-    displayName: Explicit image digest (sha256:...) override (leave blank to auto-resolve from build artifact)
+    displayName: Explicit image digest (sha256:...) override (leave as N/A to auto-resolve from build artifact)
     type: string
-    default: ''
+    default: 'N/A'
   - name: trafficWeight
     displayName: Traffic weight (0-100) for NEW revision (multi-revision only). 100 = full cutover.
     type: number
