@@ -39,7 +39,7 @@ variables:
   repository: 'planets-frontend'
   resourceGroup: 'rg-nasc-spoke-dev-001'          # TODO: set your RG
   containerAppName: 'ca-nasc-planets-web'   # TODO: set your Container App name
-  azureSubscription: 'SC-ACA'
+  azureSubscription: 'mngenvmcap572176'
   acrLoginServer: '$(acrName).azurecr.io'
   shortSha: $[ substring(variables['Build.SourceVersion'], 0, 7) ]
   runId: '$(Build.BuildId)'

@@ -42,7 +42,7 @@ variables:
   repository: 'planets-backend'
   resourceGroup: 'rg-nasc-spoke-dev-001'          # TODO: set your RG
   containerAppName: 'ca-nasc-planets-api'   # TODO: set your Container App name
-  azureSubscription: 'SC-ACA'               # Service connection name
+  azureSubscription: 'mngenvmcap572176'               # Service connection name
   acrLoginServer: '$(acrName).azurecr.io'
 
   # Derived build metadata (fallback when run manually)
