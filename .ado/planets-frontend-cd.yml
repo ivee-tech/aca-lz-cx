@@ -37,7 +37,7 @@ parameters:
 variables:
   acrName: 'crnascmieoldevaue'
   repository: 'planets-frontend'
-  resourceGroup: 'rg-aca-apps-dev'          # TODO: set your RG
+  resourceGroup: 'rg-nasc-spoke-dev-001'          # TODO: set your RG
   containerAppName: 'ca-nasc-planets-web'   # TODO: set your Container App name
   azureSubscription: 'SC-ACA'
   acrLoginServer: '$(acrName).azurecr.io'

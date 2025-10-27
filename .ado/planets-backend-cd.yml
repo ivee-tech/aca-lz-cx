@@ -10,7 +10,7 @@ trigger: none  # Deployment is event or manually triggered (see resources below)
 resources:
   pipelines:
     - pipeline: planetsBackendBuild          # Alias inside this YAML
-      source: Planets-Backend-Build          # Name of the build pipeline that produces/pushes the image
+      source: planets-backend-ci          # Name of the build pipeline that produces/pushes the image
       branch: main
       trigger: true                          # Enable automatic deploy after successful build
 
@@ -40,7 +40,7 @@ variables:
   # Core identifiers (adjust to your environment)
   acrName: 'crnascmieoldevaue'
   repository: 'planets-backend'
-  resourceGroup: 'rg-aca-apps-dev'          # TODO: set your RG
+  resourceGroup: 'rg-nasc-spoke-dev-001'          # TODO: set your RG
   containerAppName: 'ca-nasc-planets-api'   # TODO: set your Container App name
   azureSubscription: 'SC-ACA'               # Service connection name
   acrLoginServer: '$(acrName).azurecr.io'
