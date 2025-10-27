@@ -74,16 +74,16 @@
                 }
             } catch { /* ignore; will fallback */ }
             if (!data) {
-                console.warn('Falling back to static dataset – API unreachable.');
+                console.warn('Falling back to static dataset - API unreachable.');
                 data = [
-                    { name: 'Mercury', size: 0.383, distance: 5.79, speed: 0.08, rotationSpeed: 0.01, textureUrl: 'assets/mercury.jpg' },
-                    { name: 'Venus', size: 0.949, distance: 10.82, speed: 0.03, rotationSpeed: 0.006, textureUrl: 'assets/venus.jpg' },
-                    { name: 'Earth', size: 1, distance: 15, speed: 0.02, rotationSpeed: 0.008, textureUrl: 'assets/earth.jpg' },
-                    { name: 'Mars', size: 0.532, distance: 22.79, speed: 0.016, rotationSpeed: 0.012, textureUrl: 'assets/mars.jpg' },
-                    { name: 'Jupiter', size: 11.21, distance: 77.78, speed: 0.004, rotationSpeed: 0.014, textureUrl: 'assets/jupiter.jpg' },
-                    { name: 'Saturn', size: 9.45, distance: 143.37, speed: 0.002, rotationSpeed: 0.016, textureUrl: 'assets/saturn.jpg' },
-                    { name: 'Uranus', size: 4.01, distance: 287.1, speed: 0.0008, rotationSpeed: 0.018, textureUrl: 'assets/uranus.jpg' },
-                    { name: 'Neptune', size: 3.88, distance: 449.5, speed: 0.0004, rotationSpeed: 0.02, textureUrl: 'assets/neptune.jpg' }
+                    // { name: 'Mercury', size: 0.383, distance: 5.79, speed: 0.08, rotationSpeed: 0.01, textureUrl: 'assets/mercury.jpg' },
+                    // { name: 'Venus', size: 0.949, distance: 10.82, speed: 0.03, rotationSpeed: 0.006, textureUrl: 'assets/venus.jpg' },
+                    // { name: 'Earth', size: 1, distance: 15, speed: 0.02, rotationSpeed: 0.008, textureUrl: 'assets/earth.jpg' },
+                    // { name: 'Mars', size: 0.532, distance: 22.79, speed: 0.016, rotationSpeed: 0.012, textureUrl: 'assets/mars.jpg' },
+                    // { name: 'Jupiter', size: 11.21, distance: 77.78, speed: 0.004, rotationSpeed: 0.014, textureUrl: 'assets/jupiter.jpg' },
+                    // { name: 'Saturn', size: 9.45, distance: 143.37, speed: 0.002, rotationSpeed: 0.016, textureUrl: 'assets/saturn.jpg' },
+                    // { name: 'Uranus', size: 4.01, distance: 287.1, speed: 0.0008, rotationSpeed: 0.018, textureUrl: 'assets/uranus.jpg' },
+                    // { name: 'Neptune', size: 3.88, distance: 449.5, speed: 0.0004, rotationSpeed: 0.02, textureUrl: 'assets/neptune.jpg' }
                 ];
             }
             data.forEach(p => planets.push({

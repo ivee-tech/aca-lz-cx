@@ -34,7 +34,7 @@ $sseJob = Start-Job -ScriptBlock {
 Write-Host "Started rocket SSE stream in job Id=$($sseJob.Id). Use 'Receive-Job -Id $($sseJob.Id)' to view buffered output or 'Stop-Job' to end."
 
 # Publish a test rocket message
-$body = @{ source = 'Earth'; destination = 'Sun'; rocketId = 'demo-1' } | ConvertTo-Json -Compress
+$body = @{ source = 'Earth'; destination = 'Mars'; rocketId = 'demo-1' } | ConvertTo-Json -Compress
 Invoke-RestMethod -Uri 'http://localhost:5279/api/rockets/publish' -Method Post -ContentType 'application/json' -Body $body | Format-List
 
 # To stop the stream later:
