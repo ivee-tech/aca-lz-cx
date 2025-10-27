@@ -8,7 +8,7 @@ trigger: none
 resources:
   pipelines:
     - pipeline: planetsFrontendBuild
-      source: Planets-Frontend-Build
+      source: planets-frontend-ci
       branch: main
       trigger: true
 
