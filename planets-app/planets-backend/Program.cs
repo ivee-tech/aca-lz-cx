@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Decide repository provider (InMemory or Sql) via config (appsettings or env: PlanetRepository__Provider)
 var provider = builder.Configuration.GetSection("PlanetRepository")?["Provider"] ?? "InMemory";
+Console.WriteLine($"[Planets] Configured IPlanetRepository provider: {provider}.");
 if (string.Equals(provider, "Sql", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSingleton<SqlConnectionFactory>();
@@ -70,10 +71,26 @@ app.UseCors("AllowAll");
 
 // Planets endpoints (minimal API style)
 var planets = app.MapGroup("/api/planets").WithTags("Planets");
-planets.MapGet("/", (IPlanetRepository repo) => Results.Ok(repo.GetAll()))
+planets.MapGet("/", ([FromServices] ILogger<Program> logger, IPlanetRepository repo) =>
+    {
+        var providerName = repo.GetType().Name;
+        logger.LogInformation("GetPlanets executing with provider {Provider}", providerName);
+        return Results.Ok(repo.GetAll());
+    })
     .WithName("GetPlanets");
-planets.MapGet("/{id:int}", (IPlanetRepository repo, int id) =>
-    repo.GetById(id) is { } planet ? Results.Ok(planet) : Results.NotFound())
+planets.MapGet("/{id:int}", ([FromServices] ILogger<Program> logger, IPlanetRepository repo, int id) =>
+    {
+        var providerName = repo.GetType().Name;
+        var planet = repo.GetById(id);
+        if (planet is null)
+        {
+            logger.LogWarning("GetPlanetById({PlanetId}) using provider {Provider} returned not found", id, providerName);
+            return Results.NotFound();
+        }
+
+        logger.LogInformation("GetPlanetById({PlanetId}) executing with provider {Provider}", id, providerName);
+        return Results.Ok(planet);
+    })
     .WithName("GetPlanetById");
 
 // Health endpoint (minimal API)
