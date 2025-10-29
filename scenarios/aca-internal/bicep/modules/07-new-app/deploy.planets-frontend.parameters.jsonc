@@ -15,7 +15,7 @@
     "acrUmiName": { "value": "id-crnascmieoldevaue-AcrPull" },
     "containerRegistryName": { "value": "crnascmieoldevaue" },
     "environmentVariables": { "value": [
-      { "name": "API_BASE_URL", "value": "https://ca-nasc-planets-api.calmdesert-2ea64a90.australiaeast.azurecontainerapps.io" }
+      { "name": "API_BASE_URL", "value": "https://fd-nasc-dev-bje4hgeagpgaegcc.b02.azurefd.net" }
     ] },
     "secrets": { "value": [] }
   }
