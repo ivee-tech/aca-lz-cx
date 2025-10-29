@@ -38,13 +38,14 @@ public class SqlConnectionFactory
 
     public async Task<SqlConnection> CreateOpenAsync(CancellationToken ct = default)
     {
-        // If the connection string already specifies an Authentication keyword let SqlClient handle it.
         var csb = new SqlConnectionStringBuilder(_connectionString);
-        bool hasAuthKeyword = _connectionString.Contains("Authentication=", StringComparison.OrdinalIgnoreCase);
+        var authMethod = csb.Authentication;
+        bool requestsManagedIdentityAuth = authMethod is SqlAuthenticationMethod.ActiveDirectoryManagedIdentity or SqlAuthenticationMethod.ActiveDirectoryDefault;
+        bool shouldInjectManagedIdentityToken = _forceManagedIdentity && (authMethod == SqlAuthenticationMethod.NotSpecified || requestsManagedIdentityAuth);
 
         var conn = new SqlConnection(csb.ConnectionString);
 
-        if (!hasAuthKeyword && _forceManagedIdentity)
+        if (shouldInjectManagedIdentityToken)
         {
             // Acquire access token for Azure SQL
             try
@@ -59,6 +60,10 @@ public class SqlConnectionFactory
                 _logger.LogError(ex, "Failed to acquire managed identity token for Azure SQL. Ensure the Container App identity has access and the client id (if any) is correct.");
                 throw;
             }
+        }
+        else if (!_forceManagedIdentity && requestsManagedIdentityAuth)
+        {
+            _logger.LogWarning("Connection string requests Managed Identity authentication but PlanetRepository:UseManagedIdentity is disabled; relying on SqlClient behaviour.");
         }
         // else rely on SqlClient's internal AAD flow or SQL Auth as provided.
 
