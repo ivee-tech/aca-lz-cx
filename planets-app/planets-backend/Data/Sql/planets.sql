@@ -27,7 +27,7 @@ BEGIN
 END
 GO
 
-DECLARE @umiName VARCHAR(255) = 'id-crnascmieoldevaue-AcrPull';
-CREATE USER @umiName FROM EXTERNAL PROVIDER;
-ALTER ROLE db_datareader ADD MEMBER @umiName;
-ALTER ROLE db_datawriter ADD MEMBER @umiName;
+CREATE USER [id-crnascmieoldevaue-AcrPull] FROM EXTERNAL PROVIDER;
+ALTER ROLE db_datareader ADD MEMBER [id-crnascmieoldevaue-AcrPull];
+ALTER ROLE db_datawriter ADD MEMBER [id-crnascmieoldevaue-AcrPull];
+GO
