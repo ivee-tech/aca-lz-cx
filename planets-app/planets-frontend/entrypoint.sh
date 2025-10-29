@@ -10,7 +10,7 @@ API_BASE=${API_BASE_URL:-}
 
 cat > "$CONFIG_DIR/api-base.js" <<EOF
 // Generated at container start
-window.API_BASE_URL = ${API_BASE:+"$API_BASE"};
+window.API_BASE_URL = '${API_BASE:+"$API_BASE"}';
 EOF
 
 echo "[entrypoint] Wrote config/api-base.js with API_BASE_URL='${API_BASE}'"
