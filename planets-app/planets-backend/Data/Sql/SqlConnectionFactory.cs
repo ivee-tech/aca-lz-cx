@@ -40,8 +40,8 @@ public class SqlConnectionFactory
     {
         var csb = new SqlConnectionStringBuilder(_connectionString);
         var authMethod = csb.Authentication;
-        bool requestsManagedIdentityAuth = authMethod is SqlAuthenticationMethod.ActiveDirectoryManagedIdentity or SqlAuthenticationMethod.ActiveDirectoryDefault;
-        bool shouldInjectManagedIdentityToken = _forceManagedIdentity && (authMethod == SqlAuthenticationMethod.NotSpecified || requestsManagedIdentityAuth);
+    var hasAuthKeyword = authMethod != SqlAuthenticationMethod.NotSpecified;
+    bool shouldInjectManagedIdentityToken = _forceManagedIdentity && !hasAuthKeyword;
 
         var conn = new SqlConnection(csb.ConnectionString);
 
@@ -61,11 +61,11 @@ public class SqlConnectionFactory
                 throw;
             }
         }
-        else if (!_forceManagedIdentity && requestsManagedIdentityAuth)
+        else if (hasAuthKeyword)
         {
-            _logger.LogWarning("Connection string requests Managed Identity authentication but PlanetRepository:UseManagedIdentity is disabled; relying on SqlClient behaviour.");
+            _logger.LogInformation("Connection string specifies Authentication={Authentication}; relying on SqlClient to handle identity.", authMethod);
         }
-        // else rely on SqlClient's internal AAD flow or SQL Auth as provided.
+        // else rely on SqlClient's internal flow or SQL auth via connection string.
 
         await conn.OpenAsync(ct);
         return conn;
