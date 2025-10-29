@@ -26,3 +26,8 @@ BEGIN
     (8,'Neptune',3.88,449.5,0.0004,0.02,'assets/neptune.jpg');
 END
 GO
+
+DECLARE @umiName VARCHAR(255) = 'id-crnascmieoldevaue-AcrPull';
+CREATE USER @umiName FROM EXTERNAL PROVIDER;
+ALTER ROLE db_datareader ADD MEMBER @umiName;
+ALTER ROLE db_datawriter ADD MEMBER @umiName;

@@ -9,8 +9,14 @@ using Microsoft.AspNetCore.Mvc; // For [FromServices]
 var builder = WebApplication.CreateBuilder(args);
 
 // Decide repository provider (InMemory or Sql) via config (appsettings or env: PlanetRepository__Provider)
-var provider = builder.Configuration.GetSection("PlanetRepository")?["Provider"] ?? "InMemory";
-Console.WriteLine($"[Planets] Configured IPlanetRepository provider: {provider}.");
+var configuredProvider = builder.Configuration["PlanetRepository:Provider"];
+var provider = string.IsNullOrWhiteSpace(configuredProvider) ? "InMemory" : configuredProvider.Trim();
+Console.WriteLine($"[Planets] IPlanetRepository provider resolved to '{provider}' (raw value: '{configuredProvider ?? "<null>"}').");
+if (!string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase) &&
+    !string.Equals(provider, "Sql", StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine($"[Planets] WARNING: Unknown provider '{provider}'. Falling back to InMemory.");
+}
 if (string.Equals(provider, "Sql", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSingleton<SqlConnectionFactory>();
