@@ -7,8 +7,8 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc; // For [FromServices]
 using Azure.Identity;
 using Azure.Core;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Hosting;
+using Polly;
+using Polly.Retry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -324,11 +324,19 @@ public class ServiceBusRocketPublisher : IRocketPublisher
 
     private readonly ServiceBusSender _sender;
     private readonly ILogger<ServiceBusRocketPublisher> _logger;
+    private readonly AsyncRetryPolicy _sendPolicy;
 
     public ServiceBusRocketPublisher(ServiceBusSender sender, ILogger<ServiceBusRocketPublisher> logger)
     {
         _sender = sender;
         _logger = logger;
+        _sendPolicy = Policy
+            .Handle<ServiceBusException>(ex => ex.IsTransient)
+            .Or<TimeoutException>()
+            .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromMilliseconds(200 * retryAttempt), (exception, timespan, retryAttempt, context) =>
+            {
+                _logger.LogWarning(exception, "Retrying Service Bus send attempt {Attempt} after {Delay}ms", retryAttempt, timespan.TotalMilliseconds);
+            });
     }
 
     public async Task PublishAsync(RocketMessage message, CancellationToken cancellationToken = default)
@@ -336,15 +344,25 @@ public class ServiceBusRocketPublisher : IRocketPublisher
         try
         {
             var payload = JsonSerializer.Serialize(message, JsonOptions);
-            var serviceBusMessage = new ServiceBusMessage(BinaryData.FromString(payload))
+            Func<ServiceBusMessage> createMessage = () =>
             {
-                ContentType = "application/json"
+                var sbMessage = new ServiceBusMessage(BinaryData.FromString(payload))
+                {
+                    ContentType = "application/json",
+                    Subject = message.RocketId
+                };
+                sbMessage.ApplicationProperties["rocketId"] = message.RocketId;
+                sbMessage.ApplicationProperties["source"] = message.Source;
+                sbMessage.ApplicationProperties["destination"] = message.Destination;
+                return sbMessage;
             };
-            serviceBusMessage.ApplicationProperties["rocketId"] = message.RocketId;
-            serviceBusMessage.ApplicationProperties["source"] = message.Source;
-            serviceBusMessage.ApplicationProperties["destination"] = message.Destination;
 
-            await _sender.SendMessageAsync(serviceBusMessage, cancellationToken);
+            await _sendPolicy.ExecuteAsync(async ct =>
+            {
+                var sbMessage = createMessage();
+                await _sender.SendMessageAsync(sbMessage, ct);
+            }, cancellationToken);
+
             _logger.LogInformation("Queued rocket {RocketId} {Source}->{Destination} for processing via Service Bus.", message.RocketId, message.Source, message.Destination);
         }
         catch (Exception ex)
