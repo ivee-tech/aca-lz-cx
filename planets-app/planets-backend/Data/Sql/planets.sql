@@ -27,7 +27,8 @@ BEGIN
 END
 GO
 
-CREATE USER [id-crnascmieoldevaue-AcrPull] FROM EXTERNAL PROVIDER;
-ALTER ROLE db_datareader ADD MEMBER [id-crnascmieoldevaue-AcrPull];
-ALTER ROLE db_datawriter ADD MEMBER [id-crnascmieoldevaue-AcrPull];
-GO
+-- Grant read/write permissions to the AcrPull managed identity
+-- CREATE USER [id-crnascmieoldevaue-AcrPull] FROM EXTERNAL PROVIDER;
+-- ALTER ROLE db_datareader ADD MEMBER [id-crnascmieoldevaue-AcrPull];
+-- ALTER ROLE db_datawriter ADD MEMBER [id-crnascmieoldevaue-AcrPull];
+
