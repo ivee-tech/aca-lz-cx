@@ -108,22 +108,57 @@ app.MapGet("/api/rockets/stream", async (HttpContext ctx, [FromServices] RocketM
 {
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers["Content-Type"] = "text/event-stream";
-    // Send an initial comment to flush headers so clients can start reading immediately.
     await ctx.Response.WriteAsync(": stream-open\n\n");
     await ctx.Response.Body.FlushAsync();
-    var subscription = dispatcher.Subscribe();
+
+    var reader = dispatcher.Subscribe();
+    var cancellation = ctx.RequestAborted;
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var heartbeatInterval = TimeSpan.FromSeconds(15);
+    var readTask = reader.ReadAsync(cancellation).AsTask();
+    var heartbeatTask = Task.Delay(heartbeatInterval, cancellation);
+
     try
     {
-        await foreach (var msg in subscription.ReadAllAsync(ctx.RequestAborted))
+        while (!cancellation.IsCancellationRequested)
         {
-            var json = JsonSerializer.Serialize(msg, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            await ctx.Response.WriteAsync($"data: {json}\n\n");
-            await ctx.Response.Body.FlushAsync();
+            var completed = await Task.WhenAny(readTask, heartbeatTask);
+            if (completed == readTask)
+            {
+                RocketMessage msg;
+                try
+                {
+                    msg = await readTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (ChannelClosedException)
+                {
+                    break;
+                }
+
+                var json = JsonSerializer.Serialize(msg, jsonOptions);
+                await ctx.Response.WriteAsync($"data: {json}\n\n");
+                await ctx.Response.Body.FlushAsync();
+
+                readTask = reader.ReadAsync(cancellation).AsTask();
+            }
+            else
+            {
+                if (!heartbeatTask.IsCanceled && !heartbeatTask.IsFaulted)
+                {
+                    await ctx.Response.WriteAsync(": keep-alive\n\n");
+                    await ctx.Response.Body.FlushAsync();
+                }
+                heartbeatTask = Task.Delay(heartbeatInterval, cancellation);
+            }
         }
     }
     finally
     {
-        dispatcher.Unsubscribe(subscription); 
+        dispatcher.Unsubscribe(reader);
     }
 });
 

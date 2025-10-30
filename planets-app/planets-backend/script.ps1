@@ -1,6 +1,6 @@
 # run the API project
 $env:PlanetRepository__Provider = "Sql"
-$env:PlanetRepository__UseManagedIdentity = "true"
+$env:PlanetRepository__UseManagedIdentity = "false"
 $env:ConnectionStrings__PlanetDb = "Server=localhost;Database=Planets;Trusted_Connection=True;Encrypt=False;"
 dotnet run
 
@@ -14,9 +14,10 @@ curl -X POST http://localhost:5279/api/rockets/publish \
 #>
 
 # test rockets (PowerShell)
+$apiBaseUrl = 'http://localhost:5279'
 # Start SSE stream in background job (shows each JSON event line as it arrives)
 $sseJob = Start-Job -ScriptBlock {
-    $uri = 'http://localhost:5279/api/rockets/stream'
+    $uri = "$($apiBaseUrl)/api/rockets/stream"
     $client = [System.Net.Http.HttpClient]::new()
     $client.Timeout = [TimeSpan]::FromMinutes(30)
     $stream = $client.GetStreamAsync($uri).GetAwaiter().GetResult()
@@ -35,7 +36,7 @@ Write-Host "Started rocket SSE stream in job Id=$($sseJob.Id). Use 'Receive-Job 
 
 # Publish a test rocket message
 $body = @{ source = 'Earth'; destination = 'Mars'; rocketId = 'demo-1' } | ConvertTo-Json -Compress
-Invoke-RestMethod -Uri 'http://localhost:5279/api/rockets/publish' -Method Post -ContentType 'application/json' -Body $body | Format-List
+Invoke-RestMethod -Uri "$($apiBaseUrl)/api/rockets/publish" -Method Post -ContentType 'application/json' -Body $body | Format-List
 
 # To stop the stream later:
 # Stop-Job -Id $sseJob.Id; Remove-Job -Id $sseJob.Id
