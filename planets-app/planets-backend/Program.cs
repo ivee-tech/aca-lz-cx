@@ -9,6 +9,8 @@ using Azure.Identity;
 using Azure.Core;
 using Polly;
 using Polly.Retry;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -349,7 +351,10 @@ public class ServiceBusRocketPublisher : IRocketPublisher
                 var sbMessage = new ServiceBusMessage(BinaryData.FromString(payload))
                 {
                     ContentType = "application/json",
-                    Subject = message.RocketId
+                    Subject = message.RocketId,
+                    MessageId = string.IsNullOrWhiteSpace(message.RocketId)
+                        ? Guid.NewGuid().ToString("N")
+                        : $"{message.RocketId}:{Guid.NewGuid():N}"
                 };
                 sbMessage.ApplicationProperties["rocketId"] = message.RocketId;
                 sbMessage.ApplicationProperties["source"] = message.Source;
