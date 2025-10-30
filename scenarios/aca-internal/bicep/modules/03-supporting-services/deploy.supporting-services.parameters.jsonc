@@ -17,6 +17,12 @@
     "deployRedisCache": {
       "value": false
     },
+    "deployStorageAccount": {
+      "value": true
+    },
+    "storageAccountQueueNames": {
+      "value": []
+    },
     // Controls deployment of the Service Bus namespace and related resources
     "deployServiceBus": {
       "value": true

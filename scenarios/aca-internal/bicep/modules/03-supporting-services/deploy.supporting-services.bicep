@@ -37,6 +37,44 @@ param spokePrivateEndpointSubnetName string
 @description('Deploy Redis cache premium SKU')
 param deployRedisCache bool
 
+@description('Deploy an Azure Storage account for the workload.')
+param deployStorageAccount bool = false
+
+@description('Azure Storage account SKU name.')
+param storageAccountSkuName string = 'Standard_LRS'
+
+@description('Azure Storage account kind.')
+@allowed([
+  'StorageV2'
+  'BlockBlobStorage'
+  'FileStorage'
+  'Storage'
+])
+param storageAccountKind string = 'StorageV2'
+
+@description('Azure Storage account access tier. Set to an empty string for SKUs that do not support tiers.')
+param storageAccountAccessTier string = 'Hot'
+
+@description('Allow shared key authorization for the storage account.')
+param storageAccountAllowSharedKeyAccess bool = true
+
+@description('Allow blob public access for the storage account.')
+param storageAccountAllowBlobPublicAccess bool = false
+
+@description('Enable hierarchical namespace (Data Lake Storage Gen2) for the storage account.')
+param storageAccountEnableHierarchicalNamespace bool = false
+
+@description('Azure Storage account minimum TLS version.')
+@allowed([
+  'TLS1_0'
+  'TLS1_1'
+  'TLS1_2'
+])
+param storageAccountMinimumTlsVersion string = 'TLS1_2'
+
+@description('Storage queue names to create when deploying the storage account.')
+param storageAccountQueueNames array = []
+
 @description('Deploy (or not) an Azure OpenAI account. ATTENTION: At the time of writing this, OpenAI is in preview and only available in limited regions: look here: https://learn.microsoft.com/azure/ai-services/openai/chatgpt-quickstart#prerequisites')
 param deployOpenAi bool
 
@@ -165,7 +203,7 @@ module containerRegistry 'modules/container-registry.module.bicep' = {
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     containerRegistryPrivateEndpointName: naming.outputs.resourcesNames.containerRegistryPep
     containerRegistryUserAssignedIdentityName: naming.outputs.resourcesNames.containerRegistryUserAssignedIdentity
-  diagnosticWorkspaceId: logAnalyticsWorkspaceId
+    diagnosticWorkspaceId: logAnalyticsWorkspaceId
     deployZoneRedundantResources: deployZoneRedundantResources
   }
 }
@@ -182,7 +220,30 @@ module keyVault 'modules/key-vault.bicep' = {
     hubVNetId: hubVNet.id
     spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
     keyVaultPrivateEndpointName: naming.outputs.resourcesNames.keyVaultPep
-  diagnosticWorkspaceId: logAnalyticsWorkspaceId
+    diagnosticWorkspaceId: logAnalyticsWorkspaceId
+  }
+}
+
+module storageAccount 'modules/storage-account.bicep' = {
+  name: 'storageAccount-${uniqueString(resourceGroup().id)}'
+  params: {
+    deploy: deployStorageAccount
+    location: location
+    tags: tags
+    storageAccountName: naming.outputs.resourcesNames.storageAccount
+    storageAccountPrivateEndpointName: naming.outputs.resourcesNames.storageAccountPep
+    hubVNetId: hubVNet.id
+    hubVNetName: hubVNetName
+    spokeVNetId: spokeVNet.id
+    spokePrivateEndpointSubnetName: spokePrivateEndpointSubnetName
+    skuName: storageAccountSkuName
+    kind: storageAccountKind
+    accessTier: storageAccountAccessTier
+    allowSharedKeyAccess: storageAccountAllowSharedKeyAccess
+    allowBlobPublicAccess: storageAccountAllowBlobPublicAccess
+    enableHierarchicalNamespace: storageAccountEnableHierarchicalNamespace
+    minimumTlsVersion: storageAccountMinimumTlsVersion
+    queueNames: storageAccountQueueNames
   }
 }
 
@@ -294,6 +355,15 @@ output keyVaultId string = keyVault.outputs.keyVaultId
 
 @description('The name of the Azure Key Vault.')
 output keyVaultName string = keyVault.outputs.keyVaultName
+
+@description('The resource ID of the Azure Storage account.')
+output storageAccountId string = storageAccount.outputs.storageAccountId
+
+@description('The name of the Azure Storage account.')
+output storageAccountName string = storageAccount.outputs.storageAccountName
+
+@description('Metadata for storage queues created by this deployment.')
+output storageAccountQueues array = storageAccount.outputs.storageAccountQueueNames
 
 @description('The secret name to retrieve the connection string from KeyVault')
 output redisCacheSecretKey string = redisCache.outputs.redisCacheSecretKey

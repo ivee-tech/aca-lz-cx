@@ -40,13 +40,24 @@ $templateFile = './bicep/modules/03-supporting-services/deploy.supporting-servic
 $parametersFile = './bicep/modules/03-supporting-services/deploy.supporting-services.parameters.jsonc'
 $rgSpokeName = 'rg-nasc-spoke-dev-001'
 
-$sqlAdministratorPassword = 'AAAbbb12345!@#'
-az deployment group create `
+$sqlAdministratorPassword = '***'
+$supportingServicesOutputs = az deployment group create `
     -n acalza01-supporting-services `
     -g $rgSpokeName `
     -f $templateFile `
     -p $parametersFile `
-    -p sqlAdministratorPassword=$sqlAdministratorPassword
+    -p sqlAdministratorPassword=$sqlAdministratorPassword 
+
+# deploy SA
+$templateFile = './bicep/modules/03-supporting-services/deploy.service-account.bicep'
+$parametersFile = './bicep/modules/03-supporting-services/deploy.service-account.parameters.jsonc'
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+az deployment group create `
+    -n acalza01-service-account `
+    -g $rgSpokeName `
+    -f $templateFile `
+    -p $parametersFile
+
 
 # deploy ACA environment
 $templateFile = './bicep/modules/04-container-apps-environment/deploy.aca-environment.bicep'
