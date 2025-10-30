@@ -45,19 +45,16 @@ builder.Services.AddCors(options =>
 // ---------------- Rocket / Service Bus infrastructure ----------------
 // Always register RocketMessageDispatcher so local/dev & tests can use in-memory publish endpoint.
 builder.Services.AddSingleton<RocketMessageDispatcher>();
-// Config expected via appsettings or environment variables:
-//   ServiceBus:QueueName (env: ServiceBus__QueueName) default: rocket-messages
-//   ServiceBus:ConnectionString (or env: SERVICEBUS_CONNECTION_STRING) *recommended to use env*
+// Config expected via appsettings or matching env vars (e.g., ServiceBus__QueueName)
 var sbSection = builder.Configuration.GetSection("ServiceBus");
-var queueName = sbSection["QueueName"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_QUEUE") ?? "rocket-messages";
-var connectionString = sbSection["ConnectionString"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION_STRING");
-var fullyQualifiedNamespace = sbSection["FullyQualifiedNamespace"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_NAMESPACE");
-var managedIdentityClientId = sbSection["ManagedIdentityClientId"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_CLIENT_ID");
+var queueName = sbSection["QueueName"];
+var connectionString = sbSection["ConnectionString"];
+var fullyQualifiedNamespace = sbSection["FullyQualifiedNamespace"];
+var managedIdentityClientId = sbSection["ManagedIdentityClientId"];
 var useManagedIdentity = sbSection.GetValue("UseManagedIdentity", false);
-var useManagedIdentityEnv = Environment.GetEnvironmentVariable("SERVICEBUS_USE_MANAGED_IDENTITY");
-if (!string.IsNullOrWhiteSpace(useManagedIdentityEnv) && bool.TryParse(useManagedIdentityEnv, out var envUseManagedIdentity))
+if (string.IsNullOrWhiteSpace(queueName))
 {
-    useManagedIdentity = envUseManagedIdentity;
+    queueName = "rocket-messages";
 }
 var usingServiceBus = false;
 
@@ -105,6 +102,7 @@ else
 
 if (usingServiceBus)
 {
+    Console.WriteLine($"[Rocket] Service Bus queue name: '{queueName}'.");
     builder.Services.AddSingleton(sp => sp.GetRequiredService<ServiceBusClient>().CreateSender(queueName));
     builder.Services.AddSingleton<IRocketPublisher, ServiceBusRocketPublisher>();
     builder.Services.AddHostedService(sp => new ServiceBusRocketListener(
@@ -119,6 +117,17 @@ else
 // ----------------------------------------------------------------------
 
 var app = builder.Build();
+
+// Emit startup diagnostics for rocket publisher selection
+try
+{
+    var resolvedPublisher = app.Services.GetRequiredService<IRocketPublisher>();
+    Console.WriteLine($"[Rocket] Publisher implementation resolved: {resolvedPublisher.GetType().Name} (ServiceBusEnabled={usingServiceBus}).");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"[Rocket] Failed to resolve IRocketPublisher during startup diagnostics: {ex.Message}");
+}
 
 // Configure middleware
 if (app.Environment.IsDevelopment())
