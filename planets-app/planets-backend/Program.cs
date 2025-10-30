@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc; // For [FromServices]
 using Azure.Identity;
 using Azure.Core;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,7 +63,7 @@ var usingServiceBus = false;
 
 if (!string.IsNullOrWhiteSpace(connectionString) && !useManagedIdentity)
 {
-    Console.WriteLine("[Rocket] Using Service Bus connection string authentication.");
+    Console.WriteLine("[Rocket] Service Bus authentication mode: ConnectionString");
     builder.Services.AddSingleton(_ => new ServiceBusClient(connectionString));
     usingServiceBus = true;
 }
@@ -74,7 +75,7 @@ else if (useManagedIdentity)
     }
     else
     {
-        Console.WriteLine($"[Rocket] Using Azure AD credential for Service Bus namespace '{fullyQualifiedNamespace}'.");
+        Console.WriteLine($"[Rocket] Service Bus authentication mode: ManagedIdentity (namespace '{fullyQualifiedNamespace}')");
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
             Console.WriteLine("[Rocket] Connection string supplied but UseManagedIdentity=true – ignoring connection string.");
@@ -99,15 +100,21 @@ else if (useManagedIdentity)
 }
 else
 {
-    Console.WriteLine("[Rocket] Service Bus not configured – running in local in-memory mode.");
+    Console.WriteLine("[Rocket] Service Bus authentication mode: InMemory (no remote queue configured).");
 }
 
 if (usingServiceBus)
 {
+    builder.Services.AddSingleton(sp => sp.GetRequiredService<ServiceBusClient>().CreateSender(queueName));
+    builder.Services.AddSingleton<IRocketPublisher, ServiceBusRocketPublisher>();
     builder.Services.AddHostedService(sp => new ServiceBusRocketListener(
         sp.GetRequiredService<ServiceBusClient>(),
         queueName,
         sp.GetRequiredService<RocketMessageDispatcher>()));
+}
+else
+{
+    builder.Services.AddSingleton<IRocketPublisher, InMemoryRocketPublisher>();
 }
 // ----------------------------------------------------------------------
 
@@ -216,10 +223,10 @@ app.MapGet("/api/rockets/latest", ([FromServices] RocketMessageDispatcher dispat
     dispatcher.Latest is RocketMessage last ? Results.Ok(last) : Results.NoContent());
 
 // Local/dev publish endpoint (no auth; consider securing or disabling in production)
-app.MapPost("/api/rockets/publish", ([FromServices] RocketMessageDispatcher dispatcher, RocketMessage msg) =>
+app.MapPost("/api/rockets/publish", async ([FromServices] IRocketPublisher publisher, RocketMessage msg, CancellationToken cancellationToken) =>
 {
     var enriched = msg with { LaunchTime = msg.LaunchTime == default ? DateTimeOffset.UtcNow : msg.LaunchTime };
-    dispatcher.Publish(enriched);
+    await publisher.PublishAsync(enriched, cancellationToken);
     return Results.Accepted(value: enriched);
 }).WithDescription("Publish a rocket message to all SSE subscribers (local/dev/testing).");
 
@@ -259,6 +266,67 @@ public class RocketMessageDispatcher
         foreach (var ch in _subscribers.Values)
         {
             ch.Writer.TryWrite(msg);
+        }
+    }
+}
+
+public interface IRocketPublisher
+{
+    Task PublishAsync(RocketMessage message, CancellationToken cancellationToken = default);
+}
+
+public class InMemoryRocketPublisher : IRocketPublisher
+{
+    private readonly RocketMessageDispatcher _dispatcher;
+    private readonly ILogger<InMemoryRocketPublisher> _logger;
+
+    public InMemoryRocketPublisher(RocketMessageDispatcher dispatcher, ILogger<InMemoryRocketPublisher> logger)
+    {
+        _dispatcher = dispatcher;
+        _logger = logger;
+    }
+
+    public Task PublishAsync(RocketMessage message, CancellationToken cancellationToken = default)
+    {
+        _dispatcher.Publish(message);
+        _logger.LogInformation("Dispatched rocket {RocketId} {Source}->{Destination} via in-memory publisher.", message.RocketId, message.Source, message.Destination);
+        return Task.CompletedTask;
+    }
+}
+
+public class ServiceBusRocketPublisher : IRocketPublisher
+{
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private readonly ServiceBusSender _sender;
+    private readonly ILogger<ServiceBusRocketPublisher> _logger;
+
+    public ServiceBusRocketPublisher(ServiceBusSender sender, ILogger<ServiceBusRocketPublisher> logger)
+    {
+        _sender = sender;
+        _logger = logger;
+    }
+
+    public async Task PublishAsync(RocketMessage message, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(message, JsonOptions);
+            var serviceBusMessage = new ServiceBusMessage(BinaryData.FromString(payload))
+            {
+                ContentType = "application/json"
+            };
+            serviceBusMessage.ApplicationProperties["rocketId"] = message.RocketId;
+            serviceBusMessage.ApplicationProperties["source"] = message.Source;
+            serviceBusMessage.ApplicationProperties["destination"] = message.Destination;
+
+            await _sender.SendMessageAsync(serviceBusMessage, cancellationToken);
+            _logger.LogInformation("Queued rocket {RocketId} {Source}->{Destination} for processing via Service Bus.", message.RocketId, message.Source, message.Destination);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue rocket {RocketId} for Service Bus processing.", message.RocketId);
+            throw;
         }
     }
 }
