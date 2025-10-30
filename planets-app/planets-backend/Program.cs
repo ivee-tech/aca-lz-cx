@@ -5,6 +5,8 @@ using Azure.Messaging.ServiceBus;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc; // For [FromServices]
+using Azure.Identity;
+using Azure.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,13 +50,60 @@ builder.Services.AddSingleton<RocketMessageDispatcher>();
 var sbSection = builder.Configuration.GetSection("ServiceBus");
 var queueName = sbSection["QueueName"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_QUEUE") ?? "rocket-messages";
 var connectionString = sbSection["ConnectionString"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION_STRING");
-if (string.IsNullOrWhiteSpace(connectionString))
+var fullyQualifiedNamespace = sbSection["FullyQualifiedNamespace"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_NAMESPACE");
+var managedIdentityClientId = sbSection["ManagedIdentityClientId"] ?? Environment.GetEnvironmentVariable("SERVICEBUS_CLIENT_ID");
+var useManagedIdentity = sbSection.GetValue("UseManagedIdentity", false);
+var useManagedIdentityEnv = Environment.GetEnvironmentVariable("SERVICEBUS_USE_MANAGED_IDENTITY");
+if (!string.IsNullOrWhiteSpace(useManagedIdentityEnv) && bool.TryParse(useManagedIdentityEnv, out var envUseManagedIdentity))
 {
-    Console.WriteLine("[Rocket] SERVICEBUS_CONNECTION_STRING not set – running in local in-memory mode.");
+    useManagedIdentity = envUseManagedIdentity;
+}
+var usingServiceBus = false;
+
+if (!string.IsNullOrWhiteSpace(connectionString) && !useManagedIdentity)
+{
+    Console.WriteLine("[Rocket] Using Service Bus connection string authentication.");
+    builder.Services.AddSingleton(_ => new ServiceBusClient(connectionString));
+    usingServiceBus = true;
+}
+else if (useManagedIdentity)
+{
+    if (string.IsNullOrWhiteSpace(fullyQualifiedNamespace))
+    {
+        Console.WriteLine("[Rocket] Service Bus managed identity enabled but FullyQualifiedNamespace not provided – staying in in-memory mode.");
+    }
+    else
+    {
+        Console.WriteLine($"[Rocket] Using Azure AD credential for Service Bus namespace '{fullyQualifiedNamespace}'.");
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            Console.WriteLine("[Rocket] Connection string supplied but UseManagedIdentity=true – ignoring connection string.");
+        }
+        builder.Services.AddSingleton<TokenCredential>(_ =>
+        {
+            var options = new DefaultAzureCredentialOptions();
+            if (!string.IsNullOrWhiteSpace(managedIdentityClientId))
+            {
+                options.ManagedIdentityClientId = managedIdentityClientId;
+                Console.WriteLine($"[Rocket] Managed identity client id: {managedIdentityClientId}.");
+            }
+            return new DefaultAzureCredential(options);
+        });
+        builder.Services.AddSingleton(sp =>
+        {
+            var credential = sp.GetRequiredService<TokenCredential>();
+            return new ServiceBusClient(fullyQualifiedNamespace, credential);
+        });
+        usingServiceBus = true;
+    }
 }
 else
 {
-    builder.Services.AddSingleton(sp => new ServiceBusClient(connectionString));
+    Console.WriteLine("[Rocket] Service Bus not configured – running in local in-memory mode.");
+}
+
+if (usingServiceBus)
+{
     builder.Services.AddHostedService(sp => new ServiceBusRocketListener(
         sp.GetRequiredService<ServiceBusClient>(),
         queueName,

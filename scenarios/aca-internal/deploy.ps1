@@ -161,3 +161,36 @@ az deployment group create `
   --resource-group $rgSpokeName `
   --template-file $templateFile `
   --parameters $parametersFile
+
+# grant Service Bus permissions to managed identity
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+$managedIdentityName = 'id-crnascmieoldevaue-AcrPull'
+$serviceBusNamespaceName = 'sb-nasc-mieol-dev-aue'
+$serviceBusQueueName = 'rocket-messages'
+
+$managedIdentity = az identity show `
+    --name $managedIdentityName `
+    --resource-group $rgSpokeName `
+    --output json | ConvertFrom-Json
+$principalId = $managedIdentity.principalId
+if (-not $principalId) {
+    throw "Managed identity '$managedIdentityName' not found in resource group '$rgSpokeName'."
+}
+
+$serviceBusQueueId = az servicebus queue show `
+    --resource-group $rgSpokeName `
+    --namespace-name $serviceBusNamespaceName `
+    --name $serviceBusQueueName `
+    --query id `
+    --output tsv
+
+$roles = @('Azure Service Bus Data Sender', 'Azure Service Bus Data Receiver')
+foreach ($role in $roles) {
+    Write-Host "Assigning role '$role' on queue '$serviceBusQueueName' to managed identity '$managedIdentityName'."
+    az role assignment create `
+        --assignee $principalId `
+        --role $role `
+        --scope $serviceBusQueueId `
+        --output none
+}
+Write-Host "Service Bus role assignments completed for managed identity '$managedIdentityName'."
