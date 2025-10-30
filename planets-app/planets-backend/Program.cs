@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc; // For [FromServices]
 using Azure.Identity;
 using Azure.Core;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,8 +44,8 @@ builder.Services.AddCors(options =>
 });
 
 // ---------------- Rocket / Service Bus infrastructure ----------------
-// Always register RocketMessageDispatcher so local/dev & tests can use in-memory publish endpoint.
-builder.Services.AddSingleton<RocketMessageDispatcher>();
+// Always register in-memory store so local/dev & tests can use in-memory publish endpoint.
+builder.Services.AddSingleton<InMemoryRocketMessageStore>();
 // Config expected via appsettings or matching env vars (e.g., ServiceBus__QueueName)
 var sbSection = builder.Configuration.GetSection("ServiceBus");
 var queueName = sbSection["QueueName"];
@@ -105,14 +106,20 @@ if (usingServiceBus)
     Console.WriteLine($"[Rocket] Service Bus queue name: '{queueName}'.");
     builder.Services.AddSingleton(sp => sp.GetRequiredService<ServiceBusClient>().CreateSender(queueName));
     builder.Services.AddSingleton<IRocketPublisher, ServiceBusRocketPublisher>();
-    builder.Services.AddHostedService(sp => new ServiceBusRocketListener(
-        sp.GetRequiredService<ServiceBusClient>(),
-        queueName,
-        sp.GetRequiredService<RocketMessageDispatcher>()));
+    builder.Services.AddSingleton<ServiceBusRocketMessageStore>(sp =>
+    {
+        var inner = sp.GetRequiredService<InMemoryRocketMessageStore>();
+        var client = sp.GetRequiredService<ServiceBusClient>();
+        var logger = sp.GetRequiredService<ILogger<ServiceBusRocketMessageStore>>();
+        return new ServiceBusRocketMessageStore(inner, client, queueName, logger);
+    });
+    builder.Services.AddSingleton<IRocketMessageStore>(sp => sp.GetRequiredService<ServiceBusRocketMessageStore>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<ServiceBusRocketMessageStore>());
 }
 else
 {
     builder.Services.AddSingleton<IRocketPublisher, InMemoryRocketPublisher>();
+    builder.Services.AddSingleton<IRocketMessageStore>(sp => sp.GetRequiredService<InMemoryRocketMessageStore>());
 }
 // ----------------------------------------------------------------------
 
@@ -169,14 +176,14 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTime
     .WithName("Health");
 
 // SSE endpoint for streaming rocket messages to frontend
-app.MapGet("/api/rockets/stream", async (HttpContext ctx, [FromServices] RocketMessageDispatcher dispatcher) =>
+app.MapGet("/api/rockets/stream", async (HttpContext ctx, [FromServices] IRocketMessageStore store) =>
 {
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers["Content-Type"] = "text/event-stream";
     await ctx.Response.WriteAsync(": stream-open\n\n");
     await ctx.Response.Body.FlushAsync();
 
-    var reader = dispatcher.Subscribe();
+    var reader = store.Subscribe();
     var cancellation = ctx.RequestAborted;
     var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var heartbeatInterval = TimeSpan.FromSeconds(15);
@@ -223,13 +230,13 @@ app.MapGet("/api/rockets/stream", async (HttpContext ctx, [FromServices] RocketM
     }
     finally
     {
-        dispatcher.Unsubscribe(reader);
+        store.Unsubscribe(reader);
     }
 });
 
 // Simple latest message endpoint (optional polling fallback)
-app.MapGet("/api/rockets/latest", ([FromServices] RocketMessageDispatcher dispatcher) =>
-    dispatcher.Latest is RocketMessage last ? Results.Ok(last) : Results.NoContent());
+app.MapGet("/api/rockets/latest", ([FromServices] IRocketMessageStore store) =>
+    store.Latest is RocketMessage last ? Results.Ok(last) : Results.NoContent());
 
 // Local/dev publish endpoint (no auth; consider securing or disabling in production)
 app.MapPost("/api/rockets/publish", async ([FromServices] IRocketPublisher publisher, RocketMessage msg, CancellationToken cancellationToken) =>
@@ -247,8 +254,16 @@ public partial class Program { }
 // Rocket message contract
 public record RocketMessage(string Source, string Destination, string RocketId, DateTimeOffset LaunchTime);
 
-// Dispatcher maintains fan-out channels for SSE subscribers
-public class RocketMessageDispatcher
+public interface IRocketMessageStore
+{
+    ChannelReader<RocketMessage> Subscribe();
+    void Unsubscribe(ChannelReader<RocketMessage> reader);
+    RocketMessage? Latest { get; }
+    void Publish(RocketMessage message);
+}
+
+// In-memory message store maintains fan-out channels for SSE subscribers
+public class InMemoryRocketMessageStore : IRocketMessageStore
 {
     private readonly ConcurrentDictionary<Guid, Channel<RocketMessage>> _subscribers = new();
     public RocketMessage? Latest { get; private set; }
@@ -286,18 +301,18 @@ public interface IRocketPublisher
 
 public class InMemoryRocketPublisher : IRocketPublisher
 {
-    private readonly RocketMessageDispatcher _dispatcher;
+    private readonly IRocketMessageStore _store;
     private readonly ILogger<InMemoryRocketPublisher> _logger;
 
-    public InMemoryRocketPublisher(RocketMessageDispatcher dispatcher, ILogger<InMemoryRocketPublisher> logger)
+    public InMemoryRocketPublisher(IRocketMessageStore store, ILogger<InMemoryRocketPublisher> logger)
     {
-        _dispatcher = dispatcher;
+        _store = store;
         _logger = logger;
     }
 
     public Task PublishAsync(RocketMessage message, CancellationToken cancellationToken = default)
     {
-        _dispatcher.Publish(message);
+        _store.Publish(message);
         _logger.LogInformation("Dispatched rocket {RocketId} {Source}->{Destination} via in-memory publisher.", message.RocketId, message.Source, message.Destination);
         return Task.CompletedTask;
     }
@@ -305,7 +320,7 @@ public class InMemoryRocketPublisher : IRocketPublisher
 
 public class ServiceBusRocketPublisher : IRocketPublisher
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    internal static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private readonly ServiceBusSender _sender;
     private readonly ILogger<ServiceBusRocketPublisher> _logger;
@@ -340,61 +355,77 @@ public class ServiceBusRocketPublisher : IRocketPublisher
     }
 }
 
-// Hosted service reading Service Bus queue and publishing messages
-public class ServiceBusRocketListener : BackgroundService
+public class ServiceBusRocketMessageStore : IRocketMessageStore, IHostedService
 {
+    private readonly InMemoryRocketMessageStore _inner;
     private readonly ServiceBusClient _client;
     private readonly string _queue;
-    private readonly RocketMessageDispatcher _dispatcher;
+    private readonly ILogger<ServiceBusRocketMessageStore> _logger;
     private ServiceBusProcessor? _processor;
-    public ServiceBusRocketListener(ServiceBusClient client, string queue, RocketMessageDispatcher dispatcher)
-    { _client = client; _queue = queue; _dispatcher = dispatcher; }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public ServiceBusRocketMessageStore(InMemoryRocketMessageStore inner, ServiceBusClient client, string queue, ILogger<ServiceBusRocketMessageStore> logger)
+    {
+        _inner = inner;
+        _client = client;
+        _queue = queue;
+        _logger = logger;
+    }
+
+    public RocketMessage? Latest => _inner.Latest;
+
+    public ChannelReader<RocketMessage> Subscribe() => _inner.Subscribe();
+
+    public void Unsubscribe(ChannelReader<RocketMessage> reader) => _inner.Unsubscribe(reader);
+
+    public void Publish(RocketMessage message) => _inner.Publish(message);
+
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         _processor = _client.CreateProcessor(_queue, new ServiceBusProcessorOptions
         {
             AutoCompleteMessages = false,
             MaxConcurrentCalls = 1
         });
-        _processor.ProcessMessageAsync += OnMessage;
-        _processor.ProcessErrorAsync += args =>
-        {
-            Console.WriteLine($"[Rocket Listener] Error: {args.Exception.Message}");
-            return Task.CompletedTask;
-        };
-        await _processor.StartProcessingAsync(stoppingToken);
-        Console.WriteLine($"[Rocket Listener] Listening on queue '{_queue}'.");
-        // Keep running until cancellation
-        await Task.Delay(Timeout.Infinite, stoppingToken).ContinueWith(_ => { });
+
+        _processor.ProcessMessageAsync += OnMessageAsync;
+        _processor.ProcessErrorAsync += OnErrorAsync;
+
+        await _processor.StartProcessingAsync(cancellationToken);
+        _logger.LogInformation("[Rocket] Listening on Service Bus queue {Queue}", _queue);
     }
 
-    private async Task OnMessage(ProcessMessageEventArgs args)
+    private async Task OnMessageAsync(ProcessMessageEventArgs args)
     {
         try
         {
             var body = args.Message.Body.ToString();
-            var msg = JsonSerializer.Deserialize<RocketMessage>(body, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            var msg = JsonSerializer.Deserialize<RocketMessage>(body, ServiceBusRocketPublisher.JsonOptions);
             if (msg is not null)
             {
-                _dispatcher.Publish(msg);
-                Console.WriteLine($"[Rocket Listener] Message {msg.RocketId} {msg.Source}->{msg.Destination}");
+                _inner.Publish(msg);
+                _logger.LogInformation("[Rocket] Message {RocketId} {Source}->{Destination}", msg.RocketId, msg.Source, msg.Destination);
             }
             await args.CompleteMessageAsync(args.Message);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Rocket Listener] Failed to process message: {ex.Message}");
+            _logger.LogError(ex, "[Rocket] Failed to process Service Bus message");
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
+    private Task OnErrorAsync(ProcessErrorEventArgs args)
+    {
+        _logger.LogError(args.Exception, "[Rocket] Service Bus processor error from entity {EntityPath}", args.EntityPath);
+        return Task.CompletedTask;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_processor != null)
         {
             await _processor.StopProcessingAsync(cancellationToken);
             await _processor.DisposeAsync();
+            _processor = null;
         }
-        await base.StopAsync(cancellationToken);
     }
 }
