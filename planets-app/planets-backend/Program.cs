@@ -1,5 +1,7 @@
+using Dapr.Client;
 using Planets.Api.Data;
 using Planets.Api.Models;
+using Planets.Api.Options;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using System.Collections.Concurrent;
@@ -33,13 +35,12 @@ else
 {
     builder.Services.AddSingleton<IPlanetRepository, InMemoryPlanetRepository>();
 }
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
+builder.Services.Configure<NasaNeoFeedOptions>(builder.Configuration.GetSection("Nasa:NeoFeed"));
+builder.Services.AddSingleton(_ => new DaprClientBuilder().Build());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-// Using minimal APIs instead of MVC controllers for uniform style
-builder.Services.ConfigureHttpJsonOptions(o =>
-{
-    o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-});
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
@@ -148,30 +149,7 @@ if (app.Environment.IsDevelopment())
 // app.UseHttpsRedirection(); // Disabled for simpler local mixed-content when serving static frontend via file://
 
 app.UseCors("AllowAll");
-
-// Planets endpoints (minimal API style)
-var planets = app.MapGroup("/api/planets").WithTags("Planets");
-planets.MapGet("/", ([FromServices] ILogger<Program> logger, IPlanetRepository repo) =>
-    {
-        var providerName = repo.GetType().Name;
-        logger.LogInformation("GetPlanets executing with provider {Provider}", providerName);
-        return Results.Ok(repo.GetAll());
-    })
-    .WithName("GetPlanets");
-planets.MapGet("/{id:int}", ([FromServices] ILogger<Program> logger, IPlanetRepository repo, int id) =>
-    {
-        var providerName = repo.GetType().Name;
-        var planet = repo.GetById(id);
-        if (planet is null)
-        {
-            logger.LogWarning("GetPlanetById({PlanetId}) using provider {Provider} returned not found", id, providerName);
-            return Results.NotFound();
-        }
-
-        logger.LogInformation("GetPlanetById({PlanetId}) executing with provider {Provider}", id, providerName);
-        return Results.Ok(planet);
-    })
-    .WithName("GetPlanetById");
+app.MapControllers();
 
 // Health endpoint (minimal API)
 app.MapGet("/health", () => Results.Ok(new { status = "ok", timestamp = DateTimeOffset.UtcNow }))

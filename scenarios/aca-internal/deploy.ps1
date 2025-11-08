@@ -205,3 +205,20 @@ foreach ($role in $roles) {
         --output none
 }
 Write-Host "Service Bus role assignments completed for managed identity '$managedIdentityName'."
+
+
+# deploy the Dapr components to Azure Container Apps
+$rgSpokeName = 'rg-nasc-spoke-dev-001'
+$envName = 'cae-nasc-dev-aue'
+$appName = 'ca-nasc-planets-api'
+$daprAppId = 'planets-backend'
+$componentName = 'nasa-neo-feed'
+$componentFile = '../../planets-app/planets-backend/dapr/components/nasa-neo-feed.yaml'
+$nasaApiKey = $env:NASA_API_KEY
+.\update-planets-backend-dapr.ps1 -ResourceGroup $rgSpokeName `
+    -ContainerAppName $appName `
+    -EnvironmentName $envName `
+    -NasaApiKey $nasaApiKey `
+    -DaprAppId $daprAppId `
+    -ComponentName $componentName `
+    -ComponentFile $componentFile

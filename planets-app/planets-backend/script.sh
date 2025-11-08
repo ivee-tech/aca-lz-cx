@@ -19,7 +19,7 @@ trap 'echo "Stopping API..."; kill $API_PID; wait $API_PID 2>/dev/null || true' 
 API_BASE="http://localhost:5279"
 API_BASE="https://fd-nasc-dev-bje4hgeagpgaegcc.b02.azurefd.net"
 # publish
-curl -X POST ${API_BASE}/api/rockets/publish -H "Content-Type: application/json" -d '{"source":"Earth","destination":"Mars","rocketId":"demo-1"}'
+curl -X POST ${API_BASE}/api/rockets/publish -H "Content-Type: application/json" -d '{"source":"Earth","destination":"Mars","rocketId":""}'
 # stream
 for _ in {1..30}; do
   if curl -fsS "$API_BASE/health" >/dev/null 2>&1; then

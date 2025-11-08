@@ -8,15 +8,216 @@
     <style>
         body {
             margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #f5f5f5;
+            background-color: #04040c;
         }
 
         canvas {
             display: block;
         }
+
+        #asteroid-panel {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            width: 320px;
+            max-width: calc(100vw - 2rem);
+            background: rgba(12, 12, 28, 0.88);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+            z-index: 5;
+            backdrop-filter: blur(6px);
+        }
+
+        #asteroid-panel .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        #asteroid-panel .panel-title {
+            font-weight: 600;
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+            margin-top: 0.1rem;
+        }
+
+        #asteroid-panel .collapse-btn {
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(255, 255, 255, 0.04);
+            color: #f5f5f5;
+            border-radius: 6px;
+            padding: 0.2rem 0.6rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.06em;
+        }
+
+        #asteroid-panel .collapse-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        #asteroid-panel .panel-body {
+            margin-top: 0.75rem;
+        }
+
+        #asteroid-panel.collapsed .panel-body {
+            display: none;
+        }
+
+        #asteroid-panel label {
+            display: block;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #c3c3d7;
+        }
+
+        #asteroid-panel .controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-top: 0.35rem;
+            flex-wrap: nowrap;
+        }
+
+        #asteroid-panel input[type="date"] {
+            flex: 1;
+            padding: 0.4rem 0.5rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(10, 10, 22, 0.8);
+            color: #f5f5f5;
+        }
+
+        #asteroid-panel button[type="submit"] {
+            padding: 0.45rem 0.85rem;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #3d82ff, #6a5bff);
+            color: #fff;
+        }
+
+        #asteroid-panel button[type="submit"]:hover {
+            background: linear-gradient(135deg, #5b9aff, #8970ff);
+        }
+
+        #asteroid-panel .date-nav {
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(255, 255, 255, 0.04);
+            color: #f5f5f5;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        #asteroid-panel .date-nav:hover {
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        #asteroid-panel .scene-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.8rem;
+            color: #d1d1e0;
+            margin-top: 0.6rem;
+        }
+
+        #asteroid-panel .scene-toggle input[type="checkbox"] {
+            width: 1rem;
+            height: 1rem;
+            accent-color: #6a5bff;
+        }
+
+        #asteroid-status {
+            font-size: 0.85rem;
+            margin-top: 0.75rem;
+        }
+
+        #asteroid-list {
+            list-style: none;
+            padding: 0;
+            margin: 0.75rem 0 0;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        #asteroid-list li {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 0.6rem;
+            margin-bottom: 0.6rem;
+            border-left: 4px solid rgba(255, 255, 255, 0.12);
+            padding-left: 0.6rem;
+            transition: border-color 0.2s ease;
+        }
+
+        #asteroid-list li:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .asteroid-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .asteroid-name a {
+            color: #8ec6ff;
+            text-decoration: none;
+        }
+
+        .asteroid-name a:hover {
+            text-decoration: underline;
+        }
+
+        .asteroid-meta {
+            font-size: 0.8rem;
+            color: #d1d1e0;
+            margin-top: 0.25rem;
+        }
+
+        #asteroid-list li.hazardous .asteroid-name {
+            color: #ff7676;
+        }
     </style>
 </head>
 
 <body>
+    <div id="asteroid-panel" class="expanded">
+        <div class="panel-header">
+            <div class="panel-title">Near-Earth Asteroids</div>
+            <button type="button" id="asteroid-collapse-btn" class="collapse-btn" aria-expanded="true" aria-controls="asteroid-panel-body">Hide</button>
+        </div>
+        <div id="asteroid-panel-body" class="panel-body">
+            <form id="asteroid-form">
+                <label for="asteroid-date">Select date</label>
+                <div class="controls">
+                    <button type="button" class="date-nav" data-offset="-1" aria-label="Previous day">Prev</button>
+                    <input type="date" id="asteroid-date" name="asteroid-date" required>
+                    <button type="button" class="date-nav" data-offset="1" aria-label="Next day">Next</button>
+                    <button type="submit">Fetch</button>
+                </div>
+            </form>
+            <label class="scene-toggle">
+                <input type="checkbox" id="asteroid-scene-toggle">
+                Show in scene
+            </label>
+            <div id="asteroid-status" role="status" aria-live="polite">Pick a date to load asteroid data.</div>
+            <ul id="asteroid-list"></ul>
+        </div>
+    </div>
     <script src="config/api-base.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://82mou.github.io/threejs/js/OrbitControls.js"></script>
@@ -54,6 +255,398 @@
         const rockets = [];
         // Queue of incoming rocket launch directives from backend SSE
         const liveQueue = [];
+        const asteroidUi = {
+            panel: document.getElementById('asteroid-panel'),
+            panelBody: document.getElementById('asteroid-panel-body'),
+            collapseBtn: document.getElementById('asteroid-collapse-btn'),
+            form: document.getElementById('asteroid-form'),
+            date: document.getElementById('asteroid-date'),
+            sceneToggle: document.getElementById('asteroid-scene-toggle'),
+            status: document.getElementById('asteroid-status'),
+            list: document.getElementById('asteroid-list'),
+            navButtons: Array.from(document.querySelectorAll('#asteroid-panel .date-nav'))
+        };
+        let asteroidFetchController = null;
+        const asteroidRenderState = {
+            data: [],
+            group: null
+        };
+        let showAsteroidsInScene = false;
+
+        function initAsteroidUi() {
+            if (!asteroidUi.date || !asteroidUi.form || !asteroidUi.status || !asteroidUi.list) {
+                return;
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+            asteroidUi.date.value = today;
+            asteroidUi.date.max = today;
+            syncDateNavState();
+
+            if (asteroidUi.collapseBtn && asteroidUi.panel) {
+                asteroidUi.collapseBtn.addEventListener('click', () => {
+                    const willCollapse = !asteroidUi.panel.classList.contains('collapsed');
+                    setPanelCollapsed(willCollapse);
+                });
+                setPanelCollapsed(false);
+            }
+
+            if (asteroidUi.sceneToggle) {
+                asteroidUi.sceneToggle.checked = showAsteroidsInScene;
+                asteroidUi.sceneToggle.addEventListener('change', () => {
+                    showAsteroidsInScene = asteroidUi.sceneToggle.checked;
+                    updateAsteroidMeshes();
+                });
+            }
+
+            if (Array.isArray(asteroidUi.navButtons)) {
+                asteroidUi.navButtons.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const offset = Number.parseInt(btn.dataset.offset ?? '0', 10);
+                        if (!Number.isFinite(offset) || offset === 0) {
+                            return;
+                        }
+                        adjustAsteroidDateBy(offset);
+                    });
+                });
+            }
+
+            asteroidUi.form.addEventListener('submit', event => {
+                event.preventDefault();
+                if (asteroidUi.date.value) {
+                    syncDateNavState();
+                    fetchAsteroids(asteroidUi.date.value);
+                }
+            });
+
+            asteroidUi.date.addEventListener('change', () => {
+                if (asteroidUi.date.value) {
+                    syncDateNavState();
+                    fetchAsteroids(asteroidUi.date.value);
+                }
+            });
+
+            fetchAsteroids(today);
+        }
+
+        function setPanelCollapsed(collapsed) {
+            if (!asteroidUi.panel || !asteroidUi.collapseBtn) {
+                return;
+            }
+            asteroidUi.panel.classList.toggle('collapsed', collapsed);
+            asteroidUi.panel.classList.toggle('expanded', !collapsed);
+            asteroidUi.collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+            asteroidUi.collapseBtn.textContent = collapsed ? 'Show' : 'Hide';
+        }
+
+        function adjustAsteroidDateBy(offsetDays) {
+            if (!asteroidUi.date) {
+                return;
+            }
+
+            const currentValue = asteroidUi.date.value;
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayDate = new Date(`${todayStr}T00:00:00Z`);
+            let target = currentValue ? new Date(`${currentValue}T00:00:00Z`) : new Date(`${todayStr}T00:00:00Z`);
+
+            if (Number.isNaN(target.getTime())) {
+                target = new Date(`${todayStr}T00:00:00Z`);
+            }
+
+            target.setUTCDate(target.getUTCDate() + offsetDays);
+
+            if (target > todayDate) {
+                target = todayDate;
+            }
+
+            asteroidUi.date.value = formatAsInputDate(target);
+            syncDateNavState();
+            fetchAsteroids(asteroidUi.date.value);
+        }
+
+        function syncDateNavState() {
+            if (!Array.isArray(asteroidUi.navButtons) || !asteroidUi.date) {
+                return;
+            }
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const currentValue = asteroidUi.date.value;
+
+            asteroidUi.navButtons.forEach(btn => {
+                const offset = Number.parseInt(btn.dataset.offset ?? '0', 10);
+                if (!Number.isFinite(offset) || offset <= 0) {
+                    btn.disabled = false;
+                    return;
+                }
+                btn.disabled = typeof currentValue === 'string' && currentValue >= todayStr;
+            });
+        }
+
+        async function fetchAsteroids(date) {
+            if (!date || !asteroidUi.status || !asteroidUi.list) {
+                return;
+            }
+
+            syncDateNavState();
+
+            asteroidFetchController?.abort();
+            const controller = new AbortController();
+            asteroidFetchController = controller;
+
+            asteroidUi.status.textContent = 'Loading asteroids...';
+            asteroidUi.list.innerHTML = '';
+            asteroidRenderState.data = [];
+            updateAsteroidMeshes();
+
+            try {
+                const base = resolveApiBase();
+                const response = await fetch(`${base}/api/planets/asteroids?date=${encodeURIComponent(date)}`, { signal: controller.signal });
+
+                if (asteroidFetchController !== controller || controller.signal.aborted) {
+                    return;
+                }
+
+                if (!response.ok) {
+                    asteroidUi.status.textContent = `Asteroid request failed (${response.status}).`;
+                    asteroidRenderState.data = [];
+                    updateAsteroidMeshes();
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (asteroidFetchController !== controller || controller.signal.aborted) {
+                    return;
+                }
+
+                renderAsteroids(result);
+            } catch (error) {
+                if (asteroidFetchController !== controller || controller.signal.aborted) {
+                    return;
+                }
+
+                console.error('Asteroid API request failed', error);
+                asteroidUi.status.textContent = 'Unable to load asteroid data.';
+                asteroidRenderState.data = [];
+                updateAsteroidMeshes();
+            }
+        }
+
+        function renderAsteroids(result) {
+            if (!asteroidUi.status || !asteroidUi.list) {
+                return;
+            }
+
+            asteroidUi.list.innerHTML = '';
+
+            const asteroids = Array.isArray(result?.asteroids)
+                ? result.asteroids.map(item => ({
+                    ...item,
+                    _color: generateAsteroidColor(item?.isPotentiallyHazardous)
+                }))
+                : [];
+            const displayDate = typeof result?.date === 'string' && result.date
+                ? result.date
+                : asteroidUi.date?.value || '';
+
+            if (asteroids.length === 0) {
+                asteroidRenderState.data = [];
+                updateAsteroidMeshes();
+                asteroidUi.status.textContent = displayDate
+                    ? `No asteroids reported near Earth on ${displayDate}.`
+                    : 'No asteroid data available.';
+                return;
+            }
+
+            asteroids.sort((a, b) => {
+                const aDistance = typeof a?.closestApproachDistanceKm === 'number' ? a.closestApproachDistanceKm : Number.POSITIVE_INFINITY;
+                const bDistance = typeof b?.closestApproachDistanceKm === 'number' ? b.closestApproachDistanceKm : Number.POSITIVE_INFINITY;
+                return aDistance - bDistance;
+            });
+
+            asteroidRenderState.data = asteroids;
+            updateAsteroidMeshes();
+
+            asteroidUi.status.textContent = displayDate
+                ? `Found ${asteroids.length} near-Earth objects on ${displayDate}.`
+                : `Found ${asteroids.length} near-Earth objects.`;
+
+            const fragment = document.createDocumentFragment();
+
+            asteroids.forEach(item => {
+                const li = document.createElement('li');
+                if (item?.isPotentiallyHazardous) {
+                    li.classList.add('hazardous');
+                }
+
+                const colorHex = typeof item?._color === 'number'
+                    ? item._color
+                    : generateAsteroidColor(item?.isPotentiallyHazardous);
+                li.style.borderLeftColor = colorToCss(colorHex);
+
+                const name = typeof item?.name === 'string' && item.name.trim().length > 0
+                    ? item.name.trim()
+                    : (typeof item?.id === 'string' && item.id.trim().length > 0 ? item.id.trim() : 'Unknown object');
+
+                const title = document.createElement('div');
+                title.className = 'asteroid-name';
+
+                if (typeof item?.referenceUrl === 'string' && item.referenceUrl.startsWith('http')) {
+                    const link = document.createElement('a');
+                    link.href = item.referenceUrl;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.textContent = name;
+                    title.appendChild(link);
+                } else {
+                    title.textContent = name;
+                }
+
+                li.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'asteroid-meta';
+                const size = formatKm(item?.estimatedMaxDiameterKm, 2);
+                const distance = formatKm(item?.closestApproachDistanceKm, 0);
+                const hazardLabel = item?.isPotentiallyHazardous ? 'Potentially hazardous' : 'Not hazardous';
+                meta.textContent = `Size ~ ${size} km | Miss distance ~ ${distance} km | ${hazardLabel}`;
+                li.appendChild(meta);
+
+                fragment.appendChild(li);
+            });
+
+            asteroidUi.list.appendChild(fragment);
+        }
+
+        function formatKm(value, maxFractionDigits) {
+            if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+                return 'N/A';
+            }
+
+            return value.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: Math.max(0, maxFractionDigits)
+            });
+        }
+
+        function formatAsInputDate(date) {
+            if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+                return new Date().toISOString().split('T')[0];
+            }
+
+            const year = date.getUTCFullYear();
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function generateAsteroidColor(isHazardous) {
+            const hue = Math.random();
+            const saturation = isHazardous ? 0.85 : 0.6;
+            const lightness = isHazardous ? 0.5 : 0.64;
+            const color = new THREE.Color();
+            color.setHSL(hue, saturation, lightness);
+            return color.getHex();
+        }
+
+        function deriveAsteroidEmissive(colorHex, isHazardous) {
+            const base = new THREE.Color(colorHex);
+            const hsl = { h: 0, s: 0, l: 0 };
+            base.getHSL(hsl);
+            const adjusted = new THREE.Color();
+            const saturation = THREE.MathUtils.clamp(hsl.s + (isHazardous ? 0.1 : -0.2), 0, 1);
+            const lightness = THREE.MathUtils.clamp(hsl.l + (isHazardous ? -0.15 : -0.3), 0, 1);
+            adjusted.setHSL(hsl.h, saturation, lightness);
+            return adjusted.getHex();
+        }
+
+        function colorToCss(hex) {
+            const value = typeof hex === 'number' && Number.isInteger(hex) ? hex : 0xffffff;
+            return `#${value.toString(16).padStart(6, '0')}`;
+        }
+
+        function updateAsteroidMeshes() {
+            clearAsteroidMeshes();
+            if (!showAsteroidsInScene) {
+                return;
+            }
+
+            if (!Array.isArray(asteroidRenderState.data) || asteroidRenderState.data.length === 0) {
+                return;
+            }
+
+            const earth = getEarthPlanet();
+            if (!earth?.mesh) {
+                return;
+            }
+
+            const group = new THREE.Group();
+            group.name = 'asteroid-markers';
+
+            // Distribute markers around Earth with a radial spread scaled by their miss distance so viewers get an at-a-glance comparison.
+
+            const maxDistance = asteroidRenderState.data.reduce((max, item) => {
+                const distance = typeof item?.closestApproachDistanceKm === 'number' ? item.closestApproachDistanceKm : 0;
+                return distance > max ? distance : max;
+            }, 0);
+            const safeMaxDistance = maxDistance > 0 ? maxDistance : 1;
+
+            asteroidRenderState.data.forEach((item, index) => {
+                const distanceKm = typeof item?.closestApproachDistanceKm === 'number' ? item.closestApproachDistanceKm : safeMaxDistance;
+                const diameterKm = typeof item?.estimatedMaxDiameterKm === 'number' ? item.estimatedMaxDiameterKm : 0;
+                const normalized = Math.min(distanceKm / safeMaxDistance, 1);
+                const radialDistance = earth.size * (2 + normalized * 18);
+                const angle = (index / asteroidRenderState.data.length) * Math.PI * 2;
+                const elevation = (normalized - 0.5) * earth.size * 8;
+
+                const radiusScale = diameterKm > 0 ? THREE.MathUtils.clamp(diameterKm / 1000, 0.15, 1) : 0.2;
+                const markerGeo = new THREE.SphereGeometry(radiusScale, 12, 12);
+                const colorHex = typeof item?._color === 'number'
+                    ? item._color
+                    : generateAsteroidColor(item?.isPotentiallyHazardous);
+                item._color = colorHex;
+                const emissiveHex = deriveAsteroidEmissive(colorHex, item?.isPotentiallyHazardous);
+                const markerMat = new THREE.MeshStandardMaterial({
+                    color: colorHex,
+                    emissive: emissiveHex,
+                    emissiveIntensity: item?.isPotentiallyHazardous ? 0.65 : 0.35,
+                    roughness: 0.4,
+                    metalness: 0.2
+                });
+                const marker = new THREE.Mesh(markerGeo, markerMat);
+                marker.position.set(
+                    Math.cos(angle) * radialDistance,
+                    elevation,
+                    Math.sin(angle) * radialDistance
+                );
+                marker.userData = {
+                    asteroidId: item?.id ?? null,
+                    asteroidName: item?.name ?? null
+                };
+
+                group.add(marker);
+            });
+
+            earth.mesh.add(group);
+            asteroidRenderState.group = group;
+        }
+
+        function clearAsteroidMeshes() {
+            if (!asteroidRenderState.group) {
+                return;
+            }
+
+            const group = asteroidRenderState.group;
+            asteroidRenderState.group = null;
+            if (group.parent) {
+                group.parent.remove(group);
+            }
+            disposeObject(group);
+        }
+
+        function getEarthPlanet() {
+            return planets.find(p => typeof p?.name === 'string' && p.name.toLowerCase() === 'earth');
+        }
 
         function resolveApiBase() {
             // Prefer injected value; fallback to current origin
@@ -134,6 +727,7 @@
             // Once planets are created, start launching rockets
             initRocketSystem();
             initRocketSse(); // connect to backend for directed launches
+            updateAsteroidMeshes();
         }
 
         // Helper to add a textured ring to a planet. Rings are attached as child meshes so they follow the planet's orbit & rotation.
@@ -160,7 +754,8 @@
             planet.ring = ring;
         }
 
-        loadPlanets();
+    initAsteroidUi();
+    loadPlanets();
 
         // Orbit controls
         const controls = new THREE.OrbitControls(camera, renderer.domElement);

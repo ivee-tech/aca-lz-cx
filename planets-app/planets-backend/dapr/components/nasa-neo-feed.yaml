@@ -1,0 +1,7 @@
+componentType: bindings.http
+version: v1
+metadata:
+  - name: url
+    value: https://api.nasa.gov
+  - name: authType
+    value: none

@@ -40,3 +40,12 @@ Invoke-RestMethod -Uri "$($apiBaseUrl)/api/rockets/publish" -Method Post -Conten
 
 # To stop the stream later:
 # Stop-Job -Id $sseJob.Id; Remove-Job -Id $sseJob.Id
+
+# run the application locally with Dapr
+dapr run --app-id planets-backend --app-port 8080 `
+         --resources-path .\planets-backend\dapr\components\local `
+         --config .\planets-backend\dapr\config\no-tracing.yaml `
+         -- dotnet run --project planets-backend\Planets.Api.csproj
+
+# To stop Dapr, use:
+# dapr stop --app-id planets-backend
